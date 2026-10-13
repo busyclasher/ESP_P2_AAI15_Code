@@ -39,6 +39,9 @@ void scheduler_apply_config(const app_cfg_t *cfg);
  */
 void scheduler_run_all(bool running);
 
+/* Milliseconds until the next sensor falls due, capped at max_ms. */
+uint32_t scheduler_next_due_ms(bool running, uint32_t max_ms);
+
 // ---------------------------------------------------------------------
 // Compatibility shim for legacy single-sensor mode
 // (only define this if app.h already declares scheduler_run_step)

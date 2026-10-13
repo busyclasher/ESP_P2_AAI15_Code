@@ -18,6 +18,25 @@ BAUD = 115200
 STEP_TIMEOUT = 10.0
 HEARTBEAT = re.compile(r"^\[SCHED\s+\d+ms\] run_all:|^\[MQTT\] Status:")
 
+# The stages are written with Pico pin numbers. --board s3 swaps them for the
+# ESP32-S3 Super Mini (HW-747) edge pins, so both loopback jumpers sit on
+# neighbouring pins: GP21->GP22 becomes GPIO5->GPIO6, GP16->GP17 becomes
+# GPIO1->GPIO2. Pin 99 stays invalid on both boards.
+BOARD_PINS = {
+    "pico": {},
+    "s3": {16: 1, 17: 2, 18: 7, 20: 4, 21: 5, 22: 6, 25: 8},
+}
+PIN_FIELDS = re.compile(r"((?:gpio\.pin|gpio\.trig|gpio\.echo|i2c\.sda|i2c\.scl|uart\.tx|uart\.rx)=)(\d+)")
+PIN_ACTIONS = re.compile(r"\b((?:gpio|pwm)[: ])(\d+)")
+
+
+def map_pins(text, pins):
+    """Rewrite pin numbers in a command or an expected-line pattern."""
+    if not pins:
+        return text
+    swap = lambda m: m.group(1) + str(pins.get(int(m.group(2)), int(m.group(2))))
+    return PIN_ACTIONS.sub(swap, PIN_FIELDS.sub(swap, text))
+
 BOOT_CHECKS = [
     r"WiFi connect(ed| failed)",
     r"^\[INFER\] Inference manager initialised",
@@ -403,6 +422,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", default="4a", choices=sorted(STAGES))
     parser.add_argument("--port", help="serial port (default: first usbmodem/ACM port found)")
+    parser.add_argument("--board", default="pico", choices=sorted(BOARD_PINS),
+                        help="board under test; s3 maps the Pico pin numbers to the S3 pins")
     parser.add_argument("--log", help="raw serial log path (default: parity/logs/<stage>.log)")
     parser.add_argument("--boot", action="store_true",
                         help="wait for the board to be replugged and check its boot log first")
@@ -427,7 +448,10 @@ def main():
         ser.write(b"\r\n")
         read_for(ser, 1.5, log)
 
+        pins = BOARD_PINS[args.board]
         for step_id, description, command, wait, patterns in STAGES[args.stage]:
+            command = map_pins(command, pins)
+            patterns = [map_pins(p, pins) for p in patterns]
             log.write(f"{time.strftime('%H:%M:%S')} --- {step_id}: {command}\n")
             ser.write((command + "\r\n").encode())
             lines = run_step(ser, wait, patterns, log)

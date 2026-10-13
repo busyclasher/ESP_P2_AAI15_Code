@@ -163,7 +163,16 @@ void scheduler_apply_config(const app_cfg_t *cfg) {
 /* Tick all sensors */
 void scheduler_run_all(bool running) {
     uint8_t buf[128];
-    SLOG("run_all: running=%u", running?1u:0u);
+    {   // at most once per second, so a fast caller does not flood the console
+        static uint32_t s_last_log_ms;
+        static bool s_logged;
+        uint32_t now_ms = hal_time_ms();
+        if (!s_logged || now_ms - s_last_log_ms >= 1000u) {
+            SLOG("run_all: running=%u", running?1u:0u);
+            s_last_log_ms = now_ms;
+            s_logged = true;
+        }
+    }
 
     static bool s_prev_running = false;
     if (running && !s_prev_running) {
@@ -266,4 +275,25 @@ void scheduler_run_step(const app_cfg_t *cfg, bool running) {
     SLOG("run_step: enter (running=%u)", running?1u:0u);
     scheduler_run_all(running);
     SLOG("run_step: exit");
+}
+
+/* Milliseconds until the next poll-mode sensor falls due (0 if one is due
+ * now), capped at max_ms. A streaming sensor keeps it at 10 ms. Lets an RTOS
+ * task sleep exactly until there is work instead of a fixed loop delay. */
+uint32_t scheduler_next_due_ms(bool running, uint32_t max_ms) {
+    if (!running) return max_ms;
+    uint64_t now = hal_time_us();
+    uint32_t wait = max_ms;
+    for (int i = 0; i < MAX_ACTIVE; i++) {
+        const active_sensor_t *S = &g_sensors[i];
+        if (!S->in_use || !S->bus) continue;
+        if (S->cfg_copy.mode == sample_mode_stream) {
+            if (wait > 10) wait = 10;
+            continue;
+        }
+        if (S->next_run <= now) return 0;
+        uint64_t ms = (S->next_run - now + 999) / 1000;
+        if (ms < wait) wait = (uint32_t)ms;
+    }
+    return wait;
 }

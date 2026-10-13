@@ -44,6 +44,9 @@ static ssize_t console_write(void *cookie, const char *buf, size_t len) {
 }
 
 void platform_console_begin(uint32_t wait_ms) {
+    // The default 256-byte receive buffer drops the end of a long pasted line;
+    // keep it well above the REPL's 512-byte line limit.
+    Serial.setRxBufferSize(2048);
     Serial.begin(115200);
     uint32_t start = millis();
     while (!Serial && millis() - start < wait_ms) delay(10);

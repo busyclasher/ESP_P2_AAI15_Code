@@ -6,5 +6,6 @@
 
 #include <EdgeCore.h>
 #include "platform_esp32s3.h"
+#include "runtime_s3.h"
 
 #endif // EDGES3_H

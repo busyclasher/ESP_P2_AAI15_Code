@@ -96,5 +96,7 @@ void repl_init_defaults(app_cfg_t *cfg);
 void repl_show_help(void);
 void repl_print_cfg(const app_cfg_t *cfg, bool running);
 void repl_poll(app_cfg_t *cfg, bool *running, bool *cfg_ready);
+bool repl_line_feed(int ch, char *line, size_t cap, size_t *len);
+void repl_handle_line(char *line, bool *running, bool *cfg_ready);
 
 #endif // BUS_COMMON_H

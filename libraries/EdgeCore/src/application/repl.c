@@ -126,6 +126,166 @@ void repl_show_help(void) {
     printf("BEGINRULE|name=GY511_MAG|source=GY511_ACC|calc=mx=s16be(0)|calc=mz=s16be(2)|calc=my=s16be(4)|calc=mag=sqrt(mx*mx+my*my+mz*mz)|when=mag>350|action=log:MAG change detected|ENDRULE\n");
 }
 
+// --- console line assembly ---------------------------------------------------
+// Feeds one console character. Returns true when *len characters in line form
+// a complete line (without the newline). Shared by repl_poll() and by a
+// platform task that reads the console itself.
+bool repl_line_feed(int ch, char *line, size_t cap, size_t *len) {
+    if (ch == '\r') return false;
+    if (ch == '\n') {
+        line[*len] = 0;
+        trim_crlf(line);
+        return true;
+    }
+    if (*len + 1 < cap) {
+        line[(*len)++] = (char)ch;
+    } else {
+        line[*len] = 0;
+        printf("Line too long\n");
+        *len = 0;
+    }
+    return false;
+}
+
+// --- one complete console line -------------------------------------------------
+void repl_handle_line(char *line, bool *running, bool *cfg_ready) {
+    size_t line_len = strlen(line);
+
+    // ---------------- STATE: IDLE ----------------
+    if (s_state == RS_IDLE) {
+        // Inline CONFIG
+        char *b_cfg = strstr(line, "BEGINCFG");
+        char *e_cfg = strstr(line, "ENDCFG");
+        if (b_cfg && e_cfg && b_cfg < e_cfg) {
+            char delim = strchr(line, '|') ? '|' : (strchr(line,';')?';':'|');
+            memset(&s_tmp_cfg, 0, sizeof(s_tmp_cfg));
+            repl_init_defaults(&s_tmp_cfg);
+
+            char *payload_start = b_cfg + (int)strlen("BEGINCFG");
+            if (*payload_start == delim) payload_start++;
+
+            ptrdiff_t raw_len = (ptrdiff_t)(e_cfg - payload_start);
+            if (raw_len < 0) {
+                printf("ERR: malformed inline config\n");
+            } else {
+                size_t len = (size_t)raw_len;
+                char *between = (char*)malloc(len+1);
+                if (!between) {
+                    printf("ERR: alloc fail\n");
+                } else {
+                    memcpy(between, payload_start, len);
+                    between[len] = 0;
+                    feed_inline_cfg_block(between, delim, &s_tmp_cfg);
+                    free(between);
+
+                    int idx = scheduler_add_config(&s_tmp_cfg);
+                    if (idx >= 0)
+                        printf("CFG: ok (added #%d: %s)\n", idx, s_tmp_cfg.name);
+                    else
+                        printf("CFG: add failed (%d)\n", idx);
+                    *cfg_ready = true;
+                }
+            }
+            return;
+        }
+
+        // Inline RULE
+        char *b_rule = strstr(line, "BEGINRULE");
+        char *e_rule = strstr(line, "ENDRULE");
+        if (b_rule && e_rule && b_rule < e_rule) {
+            char delim = strchr(line, '|') ? '|' : (strchr(line,';')?';':'|');
+
+            char *payload_start = b_rule + (int)strlen("BEGINRULE");
+            if (*payload_start == delim) payload_start++;
+
+            ptrdiff_t raw_len = (ptrdiff_t)(e_rule - payload_start);
+            if (raw_len < 0) {
+                printf("ERR: malformed inline rule\n");
+            } else {
+                size_t len = (size_t)raw_len;
+                char *between = (char*)malloc(len+1);
+                if (!between) {
+                    printf("ERR: alloc fail\n");
+                } else {
+                    memcpy(between, payload_start, len);
+                    between[len] = 0;
+                    bool ok = feed_inline_rule_block(between, delim);
+                    free(between);
+                    printf(ok ? "RULE: ok\n" : "RULE: parse error\n");
+                }
+            }
+            return;
+        }
+
+        // ---------------- COMMANDS ----------------
+        char cmd[32]; strncpy(cmd, line, sizeof(cmd)-1); cmd[sizeof(cmd)-1]=0; lower_str(cmd);
+
+        if (strcmp(cmd, "begincfg") == 0) {
+            repl_init_defaults(&s_tmp_cfg);
+            cfg_parse_begin();
+            s_state = RS_CFG;
+            printf("CFG: begin\n");
+        }
+        else if (strcmp(cmd, "beginrule") == 0) {
+            rules_begin();
+            s_state = RS_RULE;
+            printf("RULE: begin\n");
+        }
+        else if (strcmp(cmd, "run") == 0) { *running = true; printf("RUN\n"); }
+        else if (strcmp(cmd, "stop") == 0) { *running = false; printf("STOP\n"); }
+        else if (strcmp(cmd, "clear") == 0) {
+            scheduler_reset();
+            rules_reset();
+            printf("CLEARED\n");
+        }
+        else if (strcmp(cmd, "clearrules") == 0) {
+            rules_reset();
+        }
+        else if (strcmp(cmd, "show") == 0) {
+            printf("[SHOW] sampling=%u\n", *running?1u:0u);
+            extern void scheduler_dump(void);
+            scheduler_dump();
+            rules_dump();
+        }
+        else if (strcmp(cmd, "showrules") == 0) {
+            rules_dump();
+        }
+        else if (strcmp(cmd, "help") == 0) {
+            repl_show_help();
+        }
+        else if (line_len) {
+            printf("Unknown: %s\n", line);
+        }
+    }
+
+    // ---------------- STATE: CFG ----------------
+    else if (s_state == RS_CFG) {
+        if (strcasecmp(line, "ENDCFG") == 0) {
+            cfg_parse_end(&s_tmp_cfg);
+            s_state = RS_IDLE;
+            int idx = scheduler_add_config(&s_tmp_cfg);
+            if (idx >= 0)
+                printf("CFG: ok (added #%d: %s)\n", idx, s_tmp_cfg.name);
+            else
+                printf("CFG: add failed\n");
+            *cfg_ready = true;
+        } else {
+            cfg_parse_line(line, &s_tmp_cfg);
+        }
+    }
+
+    // ---------------- STATE: RULE ----------------
+    else if (s_state == RS_RULE) {
+        if (strcasecmp(line, "ENDRULE") == 0) {
+            if (rules_end()) printf("RULE: ok\n");
+            else             printf("RULE: parse error\n");
+            s_state = RS_IDLE;
+        } else {
+            rules_feed_line(line);
+        }
+    }
+}
+
 // --- main REPL loop ----------------------------------------------------------
 void repl_poll(app_cfg_t *unused, bool *running, bool *cfg_ready) {
     (void)unused;
@@ -136,157 +296,9 @@ void repl_poll(app_cfg_t *unused, bool *running, bool *cfg_ready) {
     int ch;
 
     while ((ch = hal_console_getc(0)) != HAL_ERR_TIMEOUT) {
-        if (ch == '\r') continue;
-
-        if (ch == '\n') {
-            line[line_len] = 0;
-            trim_crlf(line);
-
-            // ---------------- STATE: IDLE ----------------
-            if (s_state == RS_IDLE) {
-                // Inline CONFIG
-                char *b_cfg = strstr(line, "BEGINCFG");
-                char *e_cfg = strstr(line, "ENDCFG");
-                if (b_cfg && e_cfg && b_cfg < e_cfg) {
-                    char delim = strchr(line, '|') ? '|' : (strchr(line,';')?';':'|');
-                    memset(&s_tmp_cfg, 0, sizeof(s_tmp_cfg));
-                    repl_init_defaults(&s_tmp_cfg);
-
-                    char *payload_start = b_cfg + (int)strlen("BEGINCFG");
-                    if (*payload_start == delim) payload_start++;
-
-                    ptrdiff_t raw_len = (ptrdiff_t)(e_cfg - payload_start);
-                    if (raw_len < 0) {
-                        printf("ERR: malformed inline config\n");
-                    } else {
-                        size_t len = (size_t)raw_len;
-                        char *between = (char*)malloc(len+1);
-                        if (!between) {
-                            printf("ERR: alloc fail\n");
-                        } else {
-                            memcpy(between, payload_start, len);
-                            between[len] = 0;
-                            feed_inline_cfg_block(between, delim, &s_tmp_cfg);
-                            free(between);
-
-                            int idx = scheduler_add_config(&s_tmp_cfg);
-                            if (idx >= 0)
-                                printf("CFG: ok (added #%d: %s)\n", idx, s_tmp_cfg.name);
-                            else
-                                printf("CFG: add failed (%d)\n", idx);
-                            *cfg_ready = true;
-                        }
-                    }
-                    line_len = 0;
-                    continue;
-                }
-
-                // Inline RULE
-                char *b_rule = strstr(line, "BEGINRULE");
-                char *e_rule = strstr(line, "ENDRULE");
-                if (b_rule && e_rule && b_rule < e_rule) {
-                    char delim = strchr(line, '|') ? '|' : (strchr(line,';')?';':'|');
-
-                    char *payload_start = b_rule + (int)strlen("BEGINRULE");
-                    if (*payload_start == delim) payload_start++;
-
-                    ptrdiff_t raw_len = (ptrdiff_t)(e_rule - payload_start);
-                    if (raw_len < 0) {
-                        printf("ERR: malformed inline rule\n");
-                    } else {
-                        size_t len = (size_t)raw_len;
-                        char *between = (char*)malloc(len+1);
-                        if (!between) {
-                            printf("ERR: alloc fail\n");
-                        } else {
-                            memcpy(between, payload_start, len);
-                            between[len] = 0;
-                            bool ok = feed_inline_rule_block(between, delim);
-                            free(between);
-                            printf(ok ? "RULE: ok\n" : "RULE: parse error\n");
-                        }
-                    }
-                    line_len = 0;
-                    continue;
-                }
-
-                // ---------------- COMMANDS ----------------
-                char cmd[32]; strncpy(cmd, line, sizeof(cmd)-1); cmd[sizeof(cmd)-1]=0; lower_str(cmd);
-
-                if (strcmp(cmd, "begincfg") == 0) {
-                    repl_init_defaults(&s_tmp_cfg);
-                    cfg_parse_begin();
-                    s_state = RS_CFG;
-                    printf("CFG: begin\n");
-                }
-                else if (strcmp(cmd, "beginrule") == 0) {
-                    rules_begin();
-                    s_state = RS_RULE;
-                    printf("RULE: begin\n");
-                }
-                else if (strcmp(cmd, "run") == 0) { *running = true; printf("RUN\n"); }
-                else if (strcmp(cmd, "stop") == 0) { *running = false; printf("STOP\n"); }
-                else if (strcmp(cmd, "clear") == 0) {
-                    scheduler_reset();
-                    rules_reset();
-                    printf("CLEARED\n");
-                }
-                else if (strcmp(cmd, "clearrules") == 0) {
-                    rules_reset();
-                }
-                else if (strcmp(cmd, "show") == 0) {
-                    printf("[SHOW] sampling=%u\n", *running?1u:0u);
-                    extern void scheduler_dump(void);
-                    scheduler_dump();
-                    rules_dump();
-                }
-                else if (strcmp(cmd, "showrules") == 0) {
-                    rules_dump();
-                }
-                else if (strcmp(cmd, "help") == 0) {
-                    repl_show_help();
-                }
-                else if (line_len) {
-                    printf("Unknown: %s\n", line);
-                }
-            }
-
-            // ---------------- STATE: CFG ----------------
-            else if (s_state == RS_CFG) {
-                if (strcasecmp(line, "ENDCFG") == 0) {
-                    cfg_parse_end(&s_tmp_cfg);
-                    s_state = RS_IDLE;
-                    int idx = scheduler_add_config(&s_tmp_cfg);
-                    if (idx >= 0)
-                        printf("CFG: ok (added #%d: %s)\n", idx, s_tmp_cfg.name);
-                    else
-                        printf("CFG: add failed\n");
-                    *cfg_ready = true;
-                } else {
-                    cfg_parse_line(line, &s_tmp_cfg);
-                }
-            }
-
-            // ---------------- STATE: RULE ----------------
-            else if (s_state == RS_RULE) {
-                if (strcasecmp(line, "ENDRULE") == 0) {
-                    if (rules_end()) printf("RULE: ok\n");
-                    else             printf("RULE: parse error\n");
-                    s_state = RS_IDLE;
-                } else {
-                    rules_feed_line(line);
-                }
-            }
-
+        if (repl_line_feed(ch, line, sizeof line, &line_len)) {
+            repl_handle_line(line, running, cfg_ready);
             line_len = 0;
-        } else {
-            if (line_len + 1 < sizeof(line)) {
-                line[line_len++] = (char)ch;
-            } else {
-                line[line_len] = 0;
-                printf("Line too long\n");
-                line_len = 0;
-            }
         }
     }
 }
