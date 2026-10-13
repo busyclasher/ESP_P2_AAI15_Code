@@ -1,0 +1,166 @@
+18:08:07 [SCHED     91227ms] run_all: running=0
+18:08:07 --- console: TASKS
+18:08:07 [TASK] SchedulerTask    stack_free=13940 B
+18:08:07 [TASK] MQTTTask         stack_free=5424 B
+18:08:07 [TASK] ControlTask      stack_free=2260 B
+18:08:07 [TASK] InferenceTask    stack_free=7416 B
+18:08:07 [TASK] ApplicationTask  stack_free=3320 B
+18:08:07 [TASK] BenchmarkTask    stack_free=2260 B
+18:08:07 [TASK] heap_free=54200 B min_free=53872 B psram_free=2010996 B
+18:08:07 [CFG] cfg_cb payload (first 120): {"configs":[{"name":"BAD",
+18:08:07 [JSON] find_json_end failed
+18:08:07 [CFG] mqtt_json_try_convert_to_inline -> -2
+18:08:07 [CFG] unrecognized payload (no BEGINCFG/BEGINRULE)
+18:08:07 [CMD] SHOW
+18:08:07 [RULE] count=0
+18:08:07 [MQTT] Connecting to 172.20.10.5 port 1883...
+18:08:07 [MQTT] connected to broker
+18:08:07 [MQTT] Subscribing to node wildcard: pico/s3-001/#
+18:08:07 [MQTT] Subscribed OK to: node-wildcard
+18:08:07 [MQTT] Subscribing to broadcast: pico/broadcast/config
+18:08:08 [MQTT] Subscribed OK to: broadcast
+18:08:08 [SCHED     92588ms] run_all: running=0
+18:08:09 [MQTT] Status: Connected, Broker: 172.20.10.5
+18:08:09 [SCHED     93588ms] run_all: running=0
+18:08:10 [SCHED     94588ms] run_all: running=0
+18:08:11 [SCHED     95588ms] run_all: running=0
+18:08:12 [SCHED     96588ms] run_all: running=0
+18:08:13 [SCHED     97588ms] run_all: running=0
+18:08:13 [CMD] SHOW
+18:08:14 [RULE] count=0
+18:08:14 [MQTT] disconnected from broker
+18:08:17 [MQTT] Connecting to 172.20.10.5 port 1883...
+18:08:17 [MQTT] connect failed (lwmqtt err -3, rc 0)
+18:08:17 [MQTT] Status: Disconnected, Broker: 172.20.10.5
+18:08:17 [SCHED     98796ms] run_all: running=0
+18:08:17 [SCHED     99796ms] run_all: running=0
+18:08:17 [SCHED    100796ms] run_all: running=0
+18:08:17 [SCHED    101796ms] run_all: running=0
+18:08:18 [SCHED    102796ms] run_all: running=0
+18:08:19 [MQTT] Connecting to 172.20.10.5 port 1883...
+18:08:19 [MQTT] connected to broker
+18:08:19 [MQTT] Subscribing to node wildcard: pico/s3-001/#
+18:08:19 [MQTT] Subscribed OK to: node-wildcard
+18:08:19 [MQTT] Subscribing to broadcast: pico/broadcast/config
+18:08:19 [MQTT] Subscribed OK to: broadcast
+18:08:21 --- console: STOP
+18:08:21 --- console: CLEAR
+18:08:21 [MQTT] Status: Connected, Broker: 172.20.10.5
+18:08:21 [SCHED    103796ms] run_all: running=0
+18:08:21 [SCHED    104796ms] run_all: running=0
+18:08:21 STOP
+18:08:21 [SCHED    105213ms] reset: cleared 8 slots
+18:08:21 [RULE] reset
+18:08:21 CLEARED
+18:08:22 [SCHED    106213ms] run_all: running=0
+18:08:23 [SCHED    107213ms] run_all: running=0
+18:08:23 --- console: BEGINCFG|name=OFFL|proto=gpio|gpio.mode=digital|gpio.pin=6|gpio.pull=down|mode=p
+18:08:23 --- console: RUN
+18:08:23 OK: Config applied (inline, delim='|')
+18:08:23 [SCHED    107285ms] add[0]: OFFL on gpio freq=2.000Hz mode=poll method=digital GPIO(pin=6)
+18:08:23 [SCHED] added: OFFL on gpio
+18:08:23 CFG: ok (added #0: OFFL)
+18:08:23 RUN
+18:08:23 [SCHED    107286ms] arm[0/OFFL]: next_run reset to NOW
+18:08:23 [SCHED    107286ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:23 proto=gpio src=OFFL len=3 ts=107286 : 00 01 00
+18:08:23 [SCHED    107786ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:23 proto=gpio src=OFFL len=3 ts=107787 : 00 F5 01
+18:08:24 [MQTT] Status: Connected, Broker: 172.20.10.5
+18:08:24 [SCHED    108287ms] run_all: running=1
+18:08:24 [SCHED    108287ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:24 proto=gpio src=OFFL len=3 ts=108288 : 00 EA 03
+18:08:24 [SCHED    108788ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:24 proto=gpio src=OFFL len=3 ts=108789 : 00 DF 05
+18:08:25 [SCHED    109289ms] run_all: running=1
+18:08:25 [SCHED    109289ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:25 proto=gpio src=OFFL len=3 ts=109290 : 00 D4 07
+18:08:25 --- console: WIFIDROP
+18:08:25 [WIFI] dropping the connection for 10 s (test)
+18:08:25 [WIFI] not connected: reason 8, see esp_wifi_types.h
+18:08:25 [WIFI] connection lost; reconnecting
+18:08:25 [MQTT] disconnected from broker
+18:08:25 [SCHED    109790ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:25 proto=gpio src=OFFL len=3 ts=109790 : 00 C9 09
+18:08:26 [SCHED    110291ms] run_all: running=1
+18:08:26 [SCHED    110291ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:26 proto=gpio src=OFFL len=3 ts=110292 : 00 BE 0B
+18:08:26 [SCHED    110792ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:26 proto=gpio src=OFFL len=3 ts=110792 : 00 B3 0D
+18:08:27 [SCHED    111292ms] run_all: running=1
+18:08:27 [SCHED    111292ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:27 proto=gpio src=OFFL len=3 ts=111292 : 00 A7 0F
+18:08:27 [SCHED    111793ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:27 proto=gpio src=OFFL len=3 ts=111793 : 00 9C 11
+18:08:28 [SCHED    112293ms] run_all: running=1
+18:08:28 [SCHED    112293ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:28 proto=gpio src=OFFL len=3 ts=112293 : 00 90 13
+18:08:28 [SCHED    112794ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:28 proto=gpio src=OFFL len=3 ts=112794 : 00 85 15
+18:08:29 [MQTT] Status: Disconnected, Broker: 172.20.10.5
+18:08:29 [SCHED    113294ms] run_all: running=1
+18:08:29 [SCHED    113294ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:29 proto=gpio src=OFFL len=3 ts=113294 : 00 79 17
+18:08:29 [SCHED    113795ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:29 proto=gpio src=OFFL len=3 ts=113795 : 00 6E 19
+18:08:30 [SCHED    114295ms] run_all: running=1
+18:08:30 [SCHED    114295ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:30 proto=gpio src=OFFL len=3 ts=114295 : 00 62 1B
+18:08:30 [SCHED    114796ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:30 proto=gpio src=OFFL len=3 ts=114796 : 00 57 1D
+18:08:31 [SCHED    115296ms] run_all: running=1
+18:08:31 [SCHED    115296ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:31 proto=gpio src=OFFL len=3 ts=115296 : 00 4B 1F
+18:08:31 [SCHED    115797ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:31 proto=gpio src=OFFL len=3 ts=115797 : 00 40 21
+18:08:32 [SCHED    116297ms] run_all: running=1
+18:08:32 [SCHED    116297ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:32 proto=gpio src=OFFL len=3 ts=116297 : 00 34 23
+18:08:32 [SCHED    116798ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:32 proto=gpio src=OFFL len=3 ts=116798 : 00 29 25
+18:08:33 [SCHED    117298ms] run_all: running=1
+18:08:33 [SCHED    117298ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:33 proto=gpio src=OFFL len=3 ts=117298 : 00 1D 27
+18:08:33 [SCHED    117799ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:33 proto=gpio src=OFFL len=3 ts=117799 : 00 12 29
+18:08:34 [MQTT] Status: Disconnected, Broker: 172.20.10.5
+18:08:34 [SCHED    118299ms] run_all: running=1
+18:08:34 [SCHED    118299ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:34 proto=gpio src=OFFL len=3 ts=118299 : 00 06 2B
+18:08:34 [SCHED    118800ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:34 proto=gpio src=OFFL len=3 ts=118800 : 00 FB 2C
+18:08:35 [SCHED    119300ms] run_all: running=1
+18:08:35 [SCHED    119300ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:35 proto=gpio src=OFFL len=3 ts=119300 : 00 EF 2E
+18:08:35 [WIFI] hold over, reconnecting
+18:08:35 [SCHED    119801ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:35 proto=gpio src=OFFL len=3 ts=119802 : 00 E4 30
+18:08:36 [SCHED    120302ms] run_all: running=1
+18:08:36 [SCHED    120302ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:36 proto=gpio src=OFFL len=3 ts=120303 : 00 D9 32
+18:08:36 [SCHED    120803ms] publish[0/OFFL]: 3 bytes via gpio
+18:08:36 proto=gpio src=OFFL len=3 ts=120804 : 00 CE 34
+18:08:37 WiFi connected
+18:08:37 [WIFI] ip=172.20.10.6
+18:08:37 [MQTT] Connecting to 172.20.10.5 port 1883...
+18:08:37 [MQTT] connected to broker
+18:08:37 [MQTT] Subscribing to node wildcard: pico/s3-001/#
+18:08:37 [MQTT] Subscribed OK to: node-wildcard
+18:08:37 [MQTT] Subscribing to broadcast: pico/broadcast/config
+18:08:37 [MQTT] Subscribed OK to: broadcast
+18:08:37 --- console: STOP
+18:08:37 --- console: CLEAR
+18:08:37 STOP
+18:08:37 [SCHED    121128ms] reset: cleared 8 slots
+18:08:37 [RULE] reset
+18:08:37 CLEARED
+18:08:38 [SCHED    122128ms] run_all: running=0
+18:08:39 [SCHED    123128ms] run_all: running=0
+18:08:39 --- console: TASKS
+18:08:39 [TASK] SchedulerTask    stack_free=12036 B
+18:08:39 [TASK] MQTTTask         stack_free=5404 B
+18:08:39 [TASK] ControlTask      stack_free=2180 B
+18:08:39 [TASK] InferenceTask    stack_free=7416 B
+18:08:39 [TASK] ApplicationTask  stack_free=3320 B
+18:08:39 [TASK] BenchmarkTask    stack_free=2260 B
+18:08:39 [TASK] heap_free=53764 B min_free=52740 B psram_free=2011008 B

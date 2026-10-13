@@ -341,6 +341,8 @@ Sitt selected the locally tested versions above as the project baseline on 2026-
 
 On 2026-10-07, Arduino IDE 2.3.10 showed **esp32 by Espressif Systems 3.3.12 installed**. Its **Verify** action compiled the same sketch with **ESP32S3 Dev Module** selected: 273,621 bytes of program storage and 21,592 bytes of global variables were reported, with no compile error. The board was not connected during that check. The later physical upload and serial result is recorded below; Task 7 still needs the same build verified on the other team machines.
 
+**Second machine — Hasif, macOS (arduino-cli 1.5.1, core 3.3.12), 2026-10-13:** the same minimal sketch with the same board options compiled to 273,317 bytes of program storage and 21,592 bytes of global variables, with no error. Globals match exactly; the 304-byte program difference is the host toolchain build.
+
 1. Install the agreed Arduino IDE version from the [Arduino software page](https://www.arduino.cc/en/software).
 2. In Arduino IDE, open **File → Preferences** and add Espressif's stable Boards Manager URL to **Additional boards manager URLs**: `https://espressif.github.io/arduino-esp32/package_esp32_index.json`.
 3. Open **Tools → Board → Boards Manager**, find **esp32 by Espressif Systems**, and install version **3.3.12**. Select **ESP32S3 Dev Module** for the HW-747 board used in this bring-up and apply the recorded options below.
@@ -407,7 +409,22 @@ The framework's platform-independent code, including the GPIO, I2C and UART driv
 
 The Pico build steps in sections 9–11 are unchanged.
 
-**Versions:** the task 7 baseline above (Arduino IDE 2.3.10, `esp32` core 3.3.12, no external libraries), with arduino-cli 1.5.1 for command-line builds. Board **ESP32S3 Dev Module** with USB Mode *Hardware CDC and JTAG*, USB CDC On Boot *Enabled*, Flash Size *4MB*, PSRAM *Disabled*, Partition Scheme *Default 4MB with spiffs*, matching the HW-747 bring-up in task 9. Task 8 confirms the final pins and PSRAM mode.
+**Versions:** the task 7 baseline above (Arduino IDE 2.3.10, `esp32` core 3.3.12, no external libraries), with arduino-cli 1.5.1 for command-line builds. Board **ESP32S3 Dev Module** with USB Mode *Hardware CDC and JTAG*, USB CDC On Boot *Enabled*, Flash Size *4MB*, PSRAM *QSPI PSRAM*, Partition Scheme *Huge APP (3MB No OTA/1MB SPIFFS)*: with Wi-Fi, MQTT and TFLite Micro the firmware is about 1.29 MB, which fills 98% of the default 1.2 MB app partition, and the static tables and tensor arena leave under 15 KB of internal RAM, so allocations fall back to the board's 2 MB PSRAM. External library: **MQTT by Joel Gaehwiler 2.5.3** (Library Manager; with the sketchbook set to this repository it installs into `libraries/MQTT/`, which is gitignored). Wi-Fi settings go in `esp32s3_edge/wifi_credentials.h` (copy the `.example`; gitignored); the S3 joins 2.4 GHz WPA2-Personal only. On an iPhone hotspot keep the Personal Hotspot screen open and turn on Maximize Compatibility, or the S3 reports `network not found`.
+
+### Terminal only (recommended)
+
+`tools/s3.sh` wraps the Arduino CLI so no IDE is needed. Run it from the repository root:
+
+```bash
+sh tools/s3.sh setup              # once: core 3.3.12, MQTT 2.5.3, Python env, credentials file
+sh tools/s3.sh flash              # build esp32s3_edge and upload it
+sh tools/s3.sh monitor            # console at 115200 (Ctrl-C to leave)
+sh tools/s3.sh test 4a            # any parity stage on the S3 (4a 4b 4c-uart 5-neg t02 t03 t04 t06 t08 t09 t10)
+sh tools/s3.sh mqtt <broker-ip>   # 27-step MQTT test against node s3-001
+sh tools/s3.sh haltest            # HAL timing, console, PWM, pulse and edge-count checks
+```
+
+Console commands on the S3, besides the REPL: `TASKS` (free stack per task and heap), `WIFISCAN` (networks the S3 can see and why it is not connected), `WIFIDROP` (drops Wi-Fi for 10 s to test reconnection). If an upload fails with "serial TX path seems to be down", replace the USB cable or hold BOOT while plugging in.
 
 ### Arduino IDE
 
@@ -422,7 +439,7 @@ The Pico build steps in sections 9–11 are unchanged.
 arduino-cli config set board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 arduino-cli core update-index
 arduino-cli core install esp32:esp32@3.3.12
-FQBN=esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=4M,PSRAM=disabled,PartitionScheme=default
+FQBN=esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=4M,PSRAM=enabled,PartitionScheme=huge_app
 arduino-cli compile --fqbn $FQBN --libraries libraries esp32s3_edge
 arduino-cli upload  --fqbn $FQBN --port /dev/cu.usbmodemXXXX esp32s3_edge
 ```
@@ -430,3 +447,27 @@ arduino-cli upload  --fqbn $FQBN --port /dev/cu.usbmodemXXXX esp32s3_edge
 ### Checks
 
 `python3 parity/parity_test.py --stage <stage> --board s3 --port <port>` runs a parity stage on the S3; `--board s3` swaps the Pico pin numbers for the S3 pins (GP16→1, GP17→2, GP18→7, GP20→4, GP21→5, GP22→6, GP25→8), so the loopback jumpers go on S3 pins 1↔2 and 5↔6. `python3 parity/hal_test.py` runs the HAL timing and console checks against `esp32s3_haltest`. `sh tools/check_hal_boundary.sh` compiles every EdgeCore source with no SDK headers, which shows that no shared module bypasses the HAL. With both boards plugged in, always pass `--port`.
+
+## Release (task 23)
+
+Team action: agree first, then one person runs it. Merge `s3-port` into `main` and tag the release:
+
+```sh
+git checkout main && git pull origin main
+git merge --no-ff s3-port -m "Merge s3-port: D1 ESP32-S3 port"
+git tag -a d1-s3-release -m "D1: ESP32-S3 port"
+git push origin main d1-s3-release
+```
+
+Check the release from a clean clone on any machine with the task 7 versions installed (board on USB, Mac on the same hotspot as the S3):
+
+```sh
+git clone --recursive git@github.com:junyonggoh2004/EMBSYS-P2-AAI15.git d1-check && cd d1-check
+git checkout d1-s3-release
+sh tools/s3.sh setup                     # core 3.3.12 and the MQTT library
+cp esp32s3_edge/wifi_credentials.h.example esp32s3_edge/wifi_credentials.h   # then edit it
+sh tools/s3.sh flash
+sh tools/s3.sh test 4a && sh tools/s3.sh test 4b && sh tools/s3.sh test 4c-uart
+```
+
+Task 23 is done when these pass from the clean clone and the tag is on GitHub.

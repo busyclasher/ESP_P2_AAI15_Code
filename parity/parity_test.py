@@ -26,8 +26,9 @@ BOARD_PINS = {
     "pico": {},
     "s3": {16: 1, 17: 2, 18: 7, 20: 4, 21: 5, 22: 6, 25: 8},
 }
-PIN_FIELDS = re.compile(r"((?:gpio\.pin|gpio\.trig|gpio\.echo|i2c\.sda|i2c\.scl|uart\.tx|uart\.rx)=)(\d+)")
+PIN_FIELDS = re.compile(r"((?:gpio\.pin|gpio\.trig|gpio\.echo|i2c\.sda|i2c\.scl|uart\.tx|uart\.rx|(?<=[(,])(?:tx|rx|pin|sda|scl))=)(\d+)")
 PIN_ACTIONS = re.compile(r"\b((?:gpio|pwm)[: ])(\d+)")
+PIN_JSON = re.compile(r'("(?:pin|trig|echo|sda|scl|tx|rx)":\s*)(\d+)')
 
 
 def map_pins(text, pins):
@@ -35,7 +36,7 @@ def map_pins(text, pins):
     if not pins:
         return text
     swap = lambda m: m.group(1) + str(pins.get(int(m.group(2)), int(m.group(2))))
-    return PIN_ACTIONS.sub(swap, PIN_FIELDS.sub(swap, text))
+    return PIN_JSON.sub(swap, PIN_ACTIONS.sub(swap, PIN_FIELDS.sub(swap, text)))
 
 BOOT_CHECKS = [
     r"WiFi connect(ed| failed)",
@@ -265,11 +266,11 @@ STAGES = {
     # T-03: an out-of-range GPIO number. Reference defect: it is accepted and returns fake readings.
     "t03": [
         ("clear-t03", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
-        ("cfg-t03", "DEFECT: a config with gpio.pin=99 is accepted",
+        ("cfg-t03", "A config with gpio.pin=99 is refused (D-08 fixed; the reference accepted it)",
          "BEGINCFG|name=BADPIN|proto=gpio|gpio.mode=digital|gpio.pin=99|mode=poll|freq_hz=1|ENDCFG",
-         3.0, [r"GPIO\(pin=99\)", r"^CFG: ok \(added #\d+: BADPIN\)"]),
-        ("run-t03", "DEFECT: the nonexistent pin publishes normal-looking readings", "RUN", 4.0,
-         [r"^proto=gpio src=BADPIN len=3 ts=\d+ : 00 "]),
+         3.0, [r"BADPIN: pin 99 not available on this board", r"^CFG: add failed \(-2\)"]),
+        ("run-t03", "Nothing is published for the refused sensor", "RUN", 4.0,
+         [r"!src=BADPIN"]),
         ("stop-t03", "STOP", "STOP", 2.5, [r"^STOP$"]),
         ("alive-t03", "The board did not crash", "SHOW", 3.0, [r"^\[SHOW\] sampling=0"]),
         ("clear-t03-end", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
@@ -293,19 +294,106 @@ STAGES = {
         ("clear-t10-end", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
     ],
     # Invalid input and limits. Needs nothing wired to the board.
+    # T-02: gpio.invert, with GP21 looped to GP22 (S3: GPIO5 -> GPIO6).
+    "t02": [
+        ("clear-t02", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-plain", "Plain input on GP22", "BEGINCFG|name=PLAIN|proto=gpio|gpio.mode=digital|gpio.pin=22"
+         "|gpio.pull=down|mode=poll|freq_hz=2|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: PLAIN\)"]),
+        ("cfg-inv", "Inverted input on the same pin", "BEGINCFG|name=INV|proto=gpio|gpio.mode=digital|gpio.pin=22"
+         "|gpio.pull=down|gpio.invert=1|mode=poll|freq_hz=2|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: INV\)"]),
+        ("rule-drive", "Rule drives GP21 high", "BEGINRULE|name=RH|source=PLAIN|calc=s=u8(0)|when=1|action=gpio:21=HIGH|ENDRULE",
+         2.5, [r"^RULE: ok"]),
+        ("run-t02", "The plain input reads 1 and the inverted one 0", "RUN", 4.0,
+         [r"src=PLAIN len=3 ts=\d+ : 01 ", r"src=INV len=3 ts=\d+ : 00 "]),
+        ("stop-t02", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-t02-end", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+    ],
+    # T-06 and P-13: sensors that are not connected time out cleanly.
+    "t06": [
+        ("clear-t06", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-ow", "One-wire input with no sensor on GP18", "BEGINCFG|name=OW|proto=gpio|gpio.mode=onewire|gpio.pin=18"
+         "|mode=poll|freq_hz=2|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: OW\)"]),
+        ("cfg-son", "HC-SR04 pulse input with no sensor (trig GP20, echo GP18)", "BEGINCFG|name=SON|proto=gpio|gpio.mode=pulse"
+         "|gpio.trig=20|gpio.echo=18|gpio.pull=down|gpio.pulse_timeout_us=25000|mode=poll|freq_hz=2|ENDCFG",
+         2.5, [r"^CFG: ok \(added #\d+: SON\)"]),
+        ("run-t06", "The pulse sensor reports the no-echo frame and the one-wire read publishes nothing", "RUN", 4.0,
+         [r"src=SON len=1 ts=\d+ : 00$", r"!src=OW "]),
+        ("stop-t06", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("alive-t06", "The board still answers", "SHOW", 2.5, [r"^\[SHOW\] sampling=0"]),
+        ("clear-t06-end", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+    ],
+    # T-08: UART framing, partial reads, line mode, more input than read_len,
+    # receive overflow and a quiet line. GP16 looped to GP17 (S3: GPIO1 -> GPIO2).
+    "t08": [
+        ("clear-t08", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-7e2", "7 data bits, even parity, 2 stop bits", "BEGINCFG|name=U7E2|proto=uart|uart.tx=16|uart.rx=17"
+         "|uart.baud=115200|uart.bits=7|uart.parity=E|uart.stop=2|uart.pre=0x41 0x42|uart.post_delay_ms=5"
+         "|uart.read_len=2|mode=poll|freq_hz=2|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: U7E2\)"]),
+        ("run-7e2", "7E2 bytes come back intact", "RUN", 3.0, [r"src=U7E2 len=2 ts=\d+ : 41 42$"]),
+        ("stop-7e2", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-7e2", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-partial", "Read length 8, only 3 bytes sent", "BEGINCFG|name=UPART|proto=uart|uart.tx=16|uart.rx=17"
+         "|uart.baud=115200|uart.pre=0x12 0x34 0x56|uart.post_delay_ms=5|uart.read_len=8|mode=poll|freq_hz=2|ENDCFG",
+         2.5, [r"^CFG: ok \(added #\d+: UPART\)"]),
+        ("run-partial", "A partial message is returned after the quiet gap", "RUN", 3.0,
+         [r"src=UPART len=3 ts=\d+ : 12 34 56$"]),
+        ("stop-partial", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-partial", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-line", "Line mode stops at a newline", "BEGINCFG|name=ULINE|proto=uart|uart.tx=16|uart.rx=17"
+         "|uart.baud=115200|uart.line_mode=1|uart.pre=0x41 0x42 0x0A 0x43 0x44 0x0A|uart.post_delay_ms=5"
+         "|uart.read_len=16|mode=poll|freq_hz=2|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: ULINE\)"]),
+        ("run-line", "Each read ends at the first newline", "RUN", 3.0,
+         [r"src=ULINE len=3 ts=\d+ : 41 42 0A$", r"src=ULINE len=3 ts=\d+ : 43 44 0A$"]),
+        ("stop-line", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-line", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-more", "16 bytes sent per poll, 8 read", "BEGINCFG|name=UMORE|proto=uart|uart.tx=16|uart.rx=17"
+         "|uart.baud=115200|uart.pre=0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F 0x10"
+         "|uart.post_delay_ms=5|uart.read_len=8|mode=poll|freq_hz=2|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: UMORE\)"]),
+        ("run-more", "Input beyond read_len is delivered later, in order", "RUN", 4.0,
+         [r"src=UMORE len=8 ts=\d+ : 01 02 03 04 05 06 07 08$", r"src=UMORE len=8 ts=\d+ : 09 0A 0B 0C 0D 0E 0F 10$",
+          r"!src=UMORE len=8 ts=\d+ : (?!01 02 03 04 05 06 07 08$|09 0A 0B 0C 0D 0E 0F 10$)"]),
+        ("stop-more", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-more", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-quiet", "No bytes sent", "BEGINCFG|name=UQUIET|proto=uart|uart.tx=16|uart.rx=17|uart.baud=115200"
+         "|uart.read_len=8|mode=poll|freq_hz=2|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: UQUIET\)"]),
+        ("run-quiet", "A quiet line times out with no sample", "RUN", 3.0, [r"!src=UQUIET"]),
+        ("stop-quiet", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-quiet", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-flood", "16 bytes sent per poll at 20 Hz, 4 read: the receive buffer overflows",
+         "BEGINCFG|name=UOVF|proto=uart|uart.tx=16|uart.rx=17|uart.baud=115200|uart.pre="
+         + " ".join(f"0x{b:02X}" for b in range(0x20, 0x30))
+         + "|uart.post_delay_ms=1|uart.read_len=4|mode=poll|freq_hz=20|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: UOVF\)"]),
+        ("run-flood", "Overflow is survived: samples keep coming, no reset", "RUN", 4.0,
+         [r"src=UOVF len=4 ts=\d+ :", r"!Guru Meditation", r"!rst:0x"]),
+        ("stop-flood", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("alive-t08", "The board still answers", "SHOW", 2.5, [r"^\[SHOW\] sampling=0"]),
+        ("clear-t08-end", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+    ],
+    # T-09: sustained UART input for 20 s at 20 Hz; every frame must be intact.
+    "t09": [
+        ("clear-t09", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-sus", "16 bytes out and back every 50 ms", "BEGINCFG|name=USUS|proto=uart|uart.tx=16|uart.rx=17"
+         "|uart.baud=115200|uart.pre=0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F 0x10"
+         "|uart.post_delay_ms=2|uart.read_len=16|mode=poll|freq_hz=20|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: USUS\)"]),
+        ("run-sus", "20 s of frames, none short or corrupted", "RUN", 20.0,
+         [r"src=USUS len=16 ts=\d+ : 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10$",
+          r"!src=USUS len=(?!16 )", r"!src=USUS len=16 ts=\d+ : (?!01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10$)"]),
+        ("stop-sus", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-t09-end", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+    ],
     "5-neg": [
         ("clear-0", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
-        # Reference defect: an unknown proto keeps the default (i2c) instead of being rejected.
-        ("neg-proto", "DEFECT: an unsupported protocol is silently accepted as I2C on default pins",
+        # The reference accepted the next three; the expectations below are the fixes (D-01, D-02).
+        ("neg-proto", "An unsupported protocol is refused (D-01 fixed)",
          "BEGINCFG|name=BADP|proto=spi|mode=poll|freq_hz=1|ENDCFG",
-         2.5, [r"BADP on i2c .*I2C\(sda=4,scl=5,addr=0x76", r"^CFG: ok \(added #\d+: BADP\)"]),
+         2.5, [r"config BADP refused: unsupported proto 'spi'", r"^CFG: add failed \(-5\)"]),
         ("neg-i2c-nodev", "An I2C device that does not answer is rejected",
          "BEGINCFG|name=NODEV|proto=i2c|mode=poll|freq_hz=1|i2c.sda=16|i2c.scl=17|i2c.addr=0x29"
          "|i2c.pre=0x80 0x03|i2c.reg=0x8A|i2c.reg_size=1|i2c.read_len=1|i2c.restart=1|ENDCFG",
          2.5, [r"init_cfg FAILED for NODEV", r"^CFG: add failed \(-2\)"]),
-        ("neg-nopin", "DEFECT: a digital config without gpio.pin is silently accepted on GP2",
+        ("neg-nopin", "A digital config without gpio.pin is refused (D-02 fixed)",
          "BEGINCFG|name=NOPIN|proto=gpio|gpio.mode=digital|mode=poll|freq_hz=1|ENDCFG",
-         2.5, [r"NOPIN on gpio .*GPIO\(pin=2\)", r"^CFG: ok \(added #\d+: NOPIN\)"]),
+         2.5, [r"NOPIN: gpio.pin is required", r"^CFG: add failed \(-2\)"]),
         ("clear-1", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
         *[(f"slot-{n}", f"Sensor slot {n} of 8 is accepted",
            f"BEGINCFG|name=S{n}|proto=gpio|gpio.mode=digital|gpio.pin=22|gpio.pull=down"
@@ -321,19 +409,22 @@ STAGES = {
         *[(f"rule-{n}", f"Rule {n} of 4 is accepted",
            f"BEGINRULE|name=R{n}|source=S1|calc=x=u8(0)|when=1|action=log:ok{n}|ENDRULE",
            2.5, [r"^RULE: ok"]) for n in range(1, 4)],
-        ("rule-4-badpin", "DEFECT: rule 4, with a non-numeric GPIO pin in its action, is accepted",
-         "BEGINRULE|name=R4|source=S1|calc=x=u8(0)|when=1|action=gpio:X=HIGH|ENDRULE",
+        ("neg-badpin", "A rule with a non-numeric GPIO pin in its action is refused when added (D-04 fixed)",
+         "BEGINRULE|name=RB|source=S1|calc=x=u8(0)|when=1|action=gpio:X=HIGH|ENDRULE",
+         2.5, [r"^\[RULE\] bad pin in action 'gpio:X=HIGH'", r"^RULE: parse error"]),
+        ("rule-4", "Rule 4 of 4 is accepted",
+         "BEGINRULE|name=R4|source=S1|calc=x=u8(0)|when=1|action=log:ok4|ENDRULE",
          2.5, [r"^RULE: ok"]),
         ("neg-rule-full", "A fifth rule is refused",
          "BEGINRULE|name=R5|source=S1|calc=x=u8(0)|when=1|action=log:no|ENDRULE",
          2.5, [r"^\[RULE\] table full", r"^RULE: parse error"]),
-        ("neg-badpin-run", "The bad GPIO pin is reported when the rule fires", "RUN", 4.0,
-         [r"^\[RULE\] R4: bad gpio pin in action='gpio:X=HIGH'", r"^\[RULE\] R1: ok1"]),
+        ("neg-run", "The accepted rules fire and the refused one never runs", "RUN", 4.0,
+         [r"^\[RULE\] R1: ok1", r"^\[RULE\] R4: ok4", r"!bad gpio pin"]),
         ("stop-neg", "STOP", "STOP", 2.5, [r"^STOP$"]),
         ("clearrules-neg", "CLEARRULES", "CLEARRULES", 2.5, [r"^\[RULE\] reset"]),
-        ("neg-badexpr", "DEFECT: a malformed when= expression is accepted without validation",
+        ("neg-badexpr", "A malformed when= expression is refused (D-03 fixed)",
          "BEGINRULE|name=RX|source=S1|calc=x=u8(0)|when=x>>>|action=log:x|ENDRULE",
-         2.5, [r"^RULE: ok"]),
+         2.5, [r"^\[RULE\] bad when= expression 'x>>>'", r"^RULE: parse error"]),
         ("clear-2", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
         ("neg-toolong", "A line longer than the 512-byte buffer is refused", "A" * 600, 2.5,
          [r"^Line too long"]),
