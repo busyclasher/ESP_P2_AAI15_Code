@@ -66,6 +66,9 @@ typedef struct {
 // Parse expression string into RPN; returns length or <0 on error
 int to_rpn(const char *expr, rpn_t *out, int out_cap);
 
+// True if expr is syntactically complete (see rule_expr.c)
+bool expr_valid(const char *expr);
+
 // Evaluate RPN with given eval context
 double eval_rpn(eval_ctx_t *e, const rpn_t *code, int n);
 

@@ -18,6 +18,32 @@ static int    g_rules_n = 0;
 
 // building a rule (BEGINRULE..ENDRULE)
 static rule_t s_build;
+static bool   s_build_bad;          // a line of this rule was invalid (D-03, D-04)
+static char   s_build_err[96];
+
+static void build_error(const char *what, const char *text) {
+    if (s_build_bad) return;        // keep the first problem
+    snprintf(s_build_err, sizeof s_build_err, "%s '%.60s'", what, text);
+    s_build_bad = true;
+}
+
+// Every "gpio:<pin>=" and "pwm:<pin>=" in an action (batch included) must name
+// a pin that exists on this board, so a bad pin is refused when the rule is
+// added rather than reported each time it fires (D-04).
+static bool action_pins_valid(const char *a) {
+    static const char *const kinds[] = { "gpio:", "pwm:" };
+    for (int k = 0; k < 2; k++) {
+        size_t klen = strlen(kinds[k]);
+        for (const char *p = strstr(a, kinds[k]); p; p = strstr(p + klen, kinds[k])) {
+            const char *q = p + klen;
+            if (*q < '0' || *q > '9') return false;
+            int pin = 0;
+            while (*q >= '0' && *q <= '9') pin = pin * 10 + (*q++ - '0');
+            if (*q != '=' || !hal_gpio_valid(pin)) return false;
+        }
+    }
+    return true;
+}
 static bool   s_building = false;
 
 // ===== Utility ===============================================================
@@ -59,6 +85,8 @@ void rules_dump(void) {
 // ===== BEGINRULE…ENDRULE builder ============================================
 void rules_begin(void) {
     memset(&s_build, 0, sizeof(s_build));
+    s_build_bad = false;
+    s_build_err[0] = 0;
     s_build.var_count = 0;
     s_build.prev_init = false;
     s_building        = true;
@@ -94,6 +122,7 @@ static bool parse_calc_line(const char *v) {
     strncpy(expr, p, sizeof(expr) - 1);
     expr[sizeof(expr) - 1] = 0;
     trim_spaces(expr);
+    if (!expr_valid(expr)) return false;
 
     int rn = to_rpn(expr, s_build.var_rpn[idx], RPN_MAX);
     if (rn < 0) return false;
@@ -107,6 +136,7 @@ static bool parse_when_line(const char *v) {
     strncpy(expr, v, sizeof(expr) - 1);
     expr[sizeof(expr) - 1] = 0;
     trim_spaces(expr);
+    if (!expr_valid(expr)) return false;
 
     int rn = to_rpn(expr, s_build.when_rpn, RPN_MAX);
     if (rn < 0) return false;
@@ -168,11 +198,11 @@ void rules_feed_line(const char *line) {
         return;
     }
     if (!strncmp(line, "calc=", 5)) {
-        (void)parse_calc_line(line);   // tolerant
+        if (!parse_calc_line(line)) build_error("bad calc", line + 5);
         return;
     }
     if (!strncmp(line, "when=", 5)) {
-        (void)parse_when_line(line + 5);
+        if (!parse_when_line(line + 5)) build_error("bad when= expression", line + 5);
         return;
     }
     if (!strncmp(line, "infer=", 6)) {
@@ -181,6 +211,7 @@ void rules_feed_line(const char *line) {
     }
     if (!strncmp(line, "action=", 7)) {
         (void)parse_action_line(line + 7);
+        if (!action_pins_valid(s_build.action)) build_error("bad pin in action", s_build.action);
         return;
     }
 
@@ -197,6 +228,10 @@ bool rules_end(void) {
     }
     if (s_build.source[0] == 0) {
         printf("[RULE] missing source=\n");
+        return false;
+    }
+    if (s_build_bad) {
+        printf("[RULE] %s\n", s_build_err);
         return false;
     }
 

@@ -23,8 +23,20 @@ static void gpio_drive(int pin, int level) {
 
             char topic[512];
             snprintf(topic, sizeof topic, "pico/%s/config", node_id);
-            mqtt_pub_text(topic, "%s", cfg_block);
-            printf("%s\n", cfg_block);
+
+            // Inside a rule the block's separators are written as "\|" so the
+            // rule parser keeps them; remove the escapes before sending, or the
+            // receiver mis-reads every field (D-11).
+            char block[512];
+            size_t j = 0;
+            for (const char *p = cfg_block; *p && j + 1 < sizeof block; p++) {
+                if (p[0] == '\\' && p[1] == '|') continue;
+                block[j++] = *p;
+            }
+            block[j] = 0;
+
+            mqtt_pub_text(topic, "%s", block);
+            printf("%s\n", block);
         }
 
 /* Helper: publish cmd to a specific node */
@@ -228,9 +240,7 @@ if (!strncmp(a, "log:", 4)) {
             int ms = atoi(ms_str);
             if (ms <= 0) ms = 100; // default 100ms if bad/missing
 
-            gpio_drive(pin, 1);
-            hal_delay_ms((uint32_t)ms);
-            gpio_drive(pin, 0);
+            hal_gpio_pulse(pin, (uint32_t)ms);
 
             printf("[RULE] %s: gpio %d=PULSE %dms\n", R->name, pin, ms);
             mqtt_pub_event(R->name, "gpio", value, "PULSE", ts_ms);

@@ -176,6 +176,44 @@ static tok_t lx_next(lexer_t *L) {
 
 // ===== Shunting-yard to RPN ==================================================
 
+// Checks the infix syntax that to_rpn() does not: every operator has an
+// operand after it, parentheses balance, and the expression does not end on
+// an operator. to_rpn() alone accepts "x>>>", "x>" and "))" (D-03). Unary
+// minus and "!" are allowed before an operand, as the evaluator supports them.
+bool expr_valid(const char *expr) {
+  lexer_t L; lx_init(&L, expr);
+  bool want_operand = true;
+  int depth = 0;
+  for (;;) {
+    tok_t t = lx_next(&L);
+    if (want_operand) {
+      switch (t.k) {
+        case TK_NUM: case TK_ID: want_operand = false; break;
+        case TK_FUNC: {
+          tok_t lp = lx_next(&L);
+          if (lp.k != TK_LP) return false;
+          depth++;
+          break;
+        }
+        case TK_LP: depth++; break;
+        case TK_MINUS: case TK_NOT: break;   // unary
+        default: return false;              // operator, ')', ',' or end
+      }
+    } else {
+      switch (t.k) {
+        case TK_PLUS: case TK_MINUS: case TK_MUL: case TK_DIV: case TK_MOD:
+        case TK_LT: case TK_LE: case TK_GT: case TK_GE: case TK_EQ: case TK_NE:
+        case TK_AND: case TK_OR:
+          want_operand = true; break;
+        case TK_RP: if (--depth < 0) return false; break;
+        case TK_COMMA: if (depth == 0) return false; want_operand = true; break;
+        case TK_END: return depth == 0;
+        default: return false;
+      }
+    }
+  }
+}
+
 int to_rpn(const char *expr, rpn_t *out, int out_cap) {
   lexer_t L; lx_init(&L, expr);
   tok_t ops[64]; int sp=0; // operator stack

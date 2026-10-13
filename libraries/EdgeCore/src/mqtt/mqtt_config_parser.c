@@ -270,14 +270,17 @@ static void cmd_cb(const char *cmd) {
         /* batch: action1 | action2 | ...
            Fires multiple actions directly from the command line */
         extern void fire_action(const rule_t *R, double value, uint32_t ts_ms);
-        static rule_t dummy_rule;
-        memset(&dummy_rule, 0, sizeof(dummy_rule));
-        strncpy(dummy_rule.name, "CMD_BATCH", sizeof(dummy_rule.name)-1);
-        strncpy(dummy_rule.action, cmd, sizeof(dummy_rule.action)-1);
-        
+        /* rule_t is about 17 KB: allocate it only while the batch runs
+           instead of keeping a static copy in RAM. */
+        rule_t *dummy_rule = calloc(1, sizeof(*dummy_rule));
+        if (!dummy_rule) { printf("[CMD] batch: out of memory\n"); return; }
+        strncpy(dummy_rule->name, "CMD_BATCH", sizeof(dummy_rule->name)-1);
+        strncpy(dummy_rule->action, cmd, sizeof(dummy_rule->action)-1);
+
         uint32_t now = hal_time_ms();
         printf("[CMD] Executing batch...\n");
-        fire_action(&dummy_rule, 0.0, now);
+        fire_action(dummy_rule, 0.0, now);
+        free(dummy_rule);
     }
     else {
         printf("[CMD] Unknown: %s\n", cmd);
