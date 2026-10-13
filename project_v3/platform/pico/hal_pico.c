@@ -7,6 +7,7 @@
 #include "pico/stdlib.h"
 #include "pico/time.h"
 #include "hardware/gpio.h"
+#include "hardware/i2c.h"
 #include "hardware/pwm.h"
 
 // ---------- time ----------
@@ -108,4 +109,37 @@ int hal_pwm_stop(int pin) {
     gpio_set_dir((uint)pin, GPIO_OUT);
     gpio_put((uint)pin, 0);
     return HAL_OK;
+}
+
+// ---------- I2C ----------
+// Same controller choice and set-up as the reference bus/i2c.c.
+
+int hal_i2c_open(int sda, int scl, uint32_t baud) {
+    if (!hal_gpio_valid(sda) || !hal_gpio_valid(scl)) return HAL_ERR_PIN;
+    // i2c1 groups: {2,3},{6,7},{10,11},{14,15},{18,19},{26,27}; the rest are i2c0
+    int bus;
+    switch (sda) {
+        case 2: case 3: case 6: case 7: case 10: case 11:
+        case 14: case 15: case 18: case 19: case 26: case 27:
+            bus = 1; break;
+        default:
+            bus = 0; break;
+    }
+    i2c_inst_t *i2c = bus ? i2c1 : i2c0;
+    i2c_init(i2c, baud);
+    gpio_set_function((uint)sda, GPIO_FUNC_I2C);
+    gpio_set_function((uint)scl, GPIO_FUNC_I2C);
+    gpio_pull_up((uint)sda);
+    gpio_pull_up((uint)scl);
+    return bus;
+}
+
+int hal_i2c_write(int bus, uint8_t addr, const uint8_t *data, size_t len, bool nostop) {
+    int r = i2c_write_blocking(bus ? i2c1 : i2c0, addr, data, len, nostop);
+    return r < 0 ? HAL_ERR_IO : r;
+}
+
+int hal_i2c_read(int bus, uint8_t addr, uint8_t *buf, size_t len) {
+    int r = i2c_read_blocking(bus ? i2c1 : i2c0, addr, buf, len, false);
+    return r < 0 ? HAL_ERR_IO : r;
 }

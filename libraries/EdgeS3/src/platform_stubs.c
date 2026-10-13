@@ -26,7 +26,6 @@ static int bus_not_ported(const sensor_cfg_t *cfg, void **ctx_out) {
     return -1;
 }
 
-const bus_t bus_i2c = { "i2c", bus_not_ported, NULL, NULL, NULL, NULL };
 const bus_t bus_uart = { "uart", bus_not_ported, NULL, NULL, NULL, NULL };
 
 // ---------- MQTT ----------

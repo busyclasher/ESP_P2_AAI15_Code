@@ -1,8 +1,9 @@
 // hal_esp32s3.cpp
-// ESP32-S3 backend for hal/hal.h (D1 task 12), built on Arduino-ESP32.
+// ESP32-S3 backend for hal/hal.h (D1 tasks 12, 14-17), built on Arduino-ESP32.
 // Behaviour follows the Pico backend (project_v3/platform/pico/hal_pico.c);
 // differences are noted where the hardware forces them.
 #include <Arduino.h>
+#include <Wire.h>
 #include <stdio.h>
 #include "esp_timer.h"
 #include "sdkconfig.h"
@@ -151,4 +152,43 @@ int hal_pwm_stop(int pin) {
     pinMode(pin, OUTPUT);
     digitalWrite(pin, LOW);
     return HAL_OK;
+}
+
+// ---------- I2C ----------
+// Two controllers (Wire, Wire1). A pin pair keeps its controller; a new pair
+// takes a free one, or re-initialises the first if both are busy.
+
+static TwoWire *const s_wire[2] = { &Wire, &Wire1 };
+static int s_i2c_pins[2][2] = { { -1, -1 }, { -1, -1 } };
+
+int hal_i2c_open(int sda, int scl, uint32_t baud) {
+    if (!hal_gpio_valid(sda) || !hal_gpio_valid(scl)) return HAL_ERR_PIN;
+    int bus = -1;
+    for (int b = 0; b < 2 && bus < 0; b++)
+        if (s_i2c_pins[b][0] == sda && s_i2c_pins[b][1] == scl) bus = b;
+    for (int b = 0; b < 2 && bus < 0; b++)
+        if (s_i2c_pins[b][0] < 0) bus = b;
+    if (bus < 0) bus = 0;
+
+    TwoWire *w = s_wire[bus];
+    w->end();
+    if (!w->begin(sda, scl, baud)) return HAL_ERR_UNSUPPORTED;   // internal pull-ups on
+    s_i2c_pins[bus][0] = sda;
+    s_i2c_pins[bus][1] = scl;
+    return bus;
+}
+
+int hal_i2c_write(int bus, uint8_t addr, const uint8_t *data, size_t len, bool nostop) {
+    TwoWire *w = s_wire[bus & 1];
+    w->beginTransmission(addr);
+    if (len) w->write(data, len);
+    return w->endTransmission(!nostop) == 0 ? (int)len : HAL_ERR_IO;
+}
+
+int hal_i2c_read(int bus, uint8_t addr, uint8_t *buf, size_t len) {
+    TwoWire *w = s_wire[bus & 1];
+    size_t n = w->requestFrom(addr, len);
+    if (n == 0) return HAL_ERR_IO;
+    for (size_t i = 0; i < n; i++) buf[i] = (uint8_t)w->read();
+    return (int)n;
 }

@@ -56,7 +56,7 @@ add_executable(project_v3
     project_v3/mqtt/mqtt_model_transfer.c
 
     ${EDGECORE}/bus/bus_if.c
-    project_v3/bus/i2c.c
+    ${EDGECORE}/bus/i2c.c
     project_v3/bus/uart.c
     ${EDGECORE}/bus/gpio.c
 

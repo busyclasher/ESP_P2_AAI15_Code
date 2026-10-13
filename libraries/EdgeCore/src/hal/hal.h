@@ -21,6 +21,7 @@
 #define HAL_HAL_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -31,6 +32,7 @@ extern "C" {
 #define HAL_ERR_TIMEOUT     (-1)  // nothing arrived within the timeout
 #define HAL_ERR_PIN         (-2)  // pin does not exist or is reserved on this board
 #define HAL_ERR_UNSUPPORTED (-3)  // operation not available on this target
+#define HAL_ERR_IO          (-4)  // the bus device did not respond
 
 // ---------- time ----------
 
@@ -94,6 +96,22 @@ int hal_pwm_set(int pin, float duty);
 
 // Stops PWM and leaves pin as an output driven low. Returns HAL_OK or HAL_ERR_PIN.
 int hal_pwm_stop(int pin);
+
+// ---------- I2C (used by bus/i2c.c) ----------
+
+// Opens an I2C controller on sda/scl at baud with the internal pull-ups on.
+// Opening the same pins again re-initialises that controller. Returns a bus
+// handle (>= 0), HAL_ERR_PIN, or HAL_ERR_UNSUPPORTED if no controller is free.
+int hal_i2c_open(int sda, int scl, uint32_t baud);
+
+// Writes len bytes to the 7-bit address. nostop keeps the bus for a repeated
+// start. Returns len, or HAL_ERR_IO if the device does not acknowledge.
+// Blocks for the transfer only (bounded by the bus timeout).
+int hal_i2c_write(int bus, uint8_t addr, const uint8_t *data, size_t len, bool nostop);
+
+// Reads len bytes from the 7-bit address. Returns the number read, or
+// HAL_ERR_IO if the device does not acknowledge.
+int hal_i2c_read(int bus, uint8_t addr, uint8_t *buf, size_t len);
 
 #ifdef __cplusplus
 }
