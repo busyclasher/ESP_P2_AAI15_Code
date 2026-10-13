@@ -142,6 +142,7 @@ Final build on 2026-10-13: HW-747 Super Mini (ESP32-S3, 4 MB flash, 2 MB PSRAM),
 | `4a` | P-01 to P-07, P-09, P-18, P-22, P-23 | 14/14 | Includes inference through Sitt's TFLite wrapper |
 | `4b` | P-08, P-10, P-11, P-19 to P-21 | 25/25 | |
 | `4c-uart` | P-16, P-17 | 8/8 | D-05 fixed: receive buffer flushed after set-up |
+| `4c-mag` | P-15 (I2C), T-07 | 15/15 | Real GY-511 (LSM303DLHC) on SDA GPIO1, SCL GPIO2: magnetometer identity `48 34 33` ("H43") at 0x1E; accelerometer at 0x19 on the same bus reads about 1 g; magnetometer data at the ±8.1 gauss range (the default range overflowed near the laptop); the same identity read with and without a repeated start; a missing device (0x2A) publishes nothing and the node keeps running. Unplug-and-recover was not run |
 | `5-neg` | N-01 to N-08 | 27/27 | D-01, D-02, D-03, D-04 now refused when added |
 | `t02` | T-02 | 7/7 | |
 | `t03` | T-03 | 6/6 | D-08 refused |
@@ -153,10 +154,11 @@ Final build on 2026-10-13: HW-747 Super Mini (ESP32-S3, 4 MB flash, 2 MB PSRAM),
 | `mqtt_test.py` | P-25 to P-29 | 27/27 | D-09, D-10, D-12 fixed; bridging verified; the model upload is verified, saved and auto-loaded |
 | `model_test.py` | T-14, T-15, T-16 | 9/9 | Valid upload saved to LittleFS and loaded; wrong CRC32, 300 KB and interrupted uploads refused with the previous model still running inference; after a reset the saved model auto-loads with no re-upload; arena 2,908 of 65,536 B used |
 | `flood_test.py` | T-13 | Pass | Heartbeat kept through 2,547 messages in 60 s; no reset |
-| `net_fault_test.py` | T-11, T-12 | 8/9, then fixed in the test | Malformed JSON refused; broker loss back in 2.2 s; Wi-Fi drop back in 1.8 s with 20 samples taken offline (FR21); heap 54,200 → 53,764 B; no reset. A 5,000-byte payload exceeds the client buffer, so the library drops the connection and the node reconnects and answers; the test expected only the truncation warning and now accepts both |
+| `net_fault_test.py` | T-11, T-12 | 9/9 | Malformed JSON refused; broker loss back in 2.2 s; Wi-Fi drop back in 1.8 s with 20 samples taken offline (FR21); heap 54,200 → 53,764 B; no reset. A 5,000-byte payload exceeds the client buffer, so the library drops the connection and the node reconnects and answers; the test accepts either outcome |
 | `timing_test.py` | NFR1 | Pass | Mean interval 101.28, 504.52, 1005.72 and 2019.88 ms for 100, 500, 1000 and 2000 ms targets (within 5%, ≥100 samples); 10 ms measured at 10.99 ms and 50 ms at 51.15 ms |
+| `endurance_test.py` | NFR6 | 6/6 | 30 minutes with Wi-Fi and MQTT on the home network: three sensors (2, 1, 0.5 Hz) and an inference rule; no reset or panic; largest sample gap one period (E1 3,598 samples, E2 1,799, E3 901); 181 heartbeats, largest gap 10.5 s; internal heap 48,696 → 48,696 B (sampled every 5 minutes, range 48,648–48,696) |
 | `TASKS` after the suite | T-01 | Pass | Stack free: SchedulerTask 12,036, MQTTTask 5,404, ControlTask 2,180, InferenceTask 7,416, ApplicationTask 3,320, BenchmarkTask 2,260 B. Internal heap 53,716 B (minimum 49,376 B); PSRAM free 2,011,040 B; no watchdog reset or panic in any log |
 
 **Pico regression:** the Pico firmware (`project_v3`) builds with every shared-code change above and `tools/check_hal_boundary.sh` passes; the Pico hardware re-run is still to do.
 
-**Not run on the S3:** 4c-sonic (P-12, P-13) needs a 1:2 divider on Echo and the kit has only two 50 kΩ resistors; 4c-i2c (P-15, task 16) needs the TSL2561 or magnetometer wired to the S3; P-30 radar deferred as on the Pico; NFR6 30-minute endurance run (`endurance_test.py`) still to do: a first attempt stopped after 9 minutes when the USB connection dropped, with no reset or panic in the log.
+**Not run on the S3:** 4c-sonic (P-12, P-13) needs a 1:2 divider on Echo and the kit has only two 50 kΩ resistors; the TSL2561 (4c-i2c) is no longer in the kit, so I2C is verified with the GY-511 (4c-mag); P-30 radar deferred as on the Pico; the Pico hardware re-run waits for a Pico on a data cable.
