@@ -3,8 +3,6 @@
 // that later tasks port. Each returns a documented "unsupported" result so the
 // core runs and reports the gap instead of failing to link:
 //
-//   bus drivers (tasks 14-17) init_cfg() returns -1, so the scheduler prints
-//                              "init_cfg FAILED" and refuses the sensor
 //   MQTT (task 19)             publishing returns false, as on the Pico while
 //                              the broker is unreachable; mqtt_init() returns false
 //   model transfer (task 20)   no uploaded model: MODEL_IDLE, size 0, NULL
@@ -13,20 +11,9 @@
 // Each task deletes its part of this file when it adds the real driver.
 #include <stdio.h>
 
-#include "bus/bus_if.h"
 #include "mqtt/mqtt_telemetry.h"
 #include "mqtt/mqtt_model_transfer.h"
 #include "inference_engine/tflite_wrapper.h"
-
-// ---------- bus drivers ----------
-
-static int bus_not_ported(const sensor_cfg_t *cfg, void **ctx_out) {
-    (void)ctx_out;
-    printf("[S3] %s driver not ported yet\n", cfg && cfg->proto ? cfg->proto : "bus");
-    return -1;
-}
-
-const bus_t bus_uart = { "uart", bus_not_ported, NULL, NULL, NULL, NULL };
 
 // ---------- MQTT ----------
 

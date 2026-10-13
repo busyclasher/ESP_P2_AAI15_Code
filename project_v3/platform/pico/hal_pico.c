@@ -9,6 +9,7 @@
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "hardware/pwm.h"
+#include "hardware/uart.h"
 
 // ---------- time ----------
 
@@ -142,4 +143,41 @@ int hal_i2c_write(int bus, uint8_t addr, const uint8_t *data, size_t len, bool n
 int hal_i2c_read(int bus, uint8_t addr, uint8_t *buf, size_t len) {
     int r = i2c_read_blocking(bus ? i2c1 : i2c0, addr, buf, len, false);
     return r < 0 ? HAL_ERR_IO : r;
+}
+
+// ---------- UART ----------
+// Same UART choice and set-up as the reference bus/uart.c.
+
+static uart_inst_t *uart_for(int port) {
+    return port ? uart1 : uart0;
+}
+
+int hal_uart_open(int tx, int rx, uint32_t baud, uint8_t bits, char parity, uint8_t stop) {
+    if (!hal_gpio_valid(tx) || !hal_gpio_valid(rx)) return HAL_ERR_PIN;
+    // uart1 pairs: {4,5},{8,9},{20,21}; the rest use uart0
+    int port = 0;
+    switch (tx) { case 4: case 5: case 8: case 9: case 20: case 21: port = 1; break; default: break; }
+    switch (rx) { case 4: case 5: case 8: case 9: case 20: case 21: port = 1; break; default: break; }
+
+    uart_parity_t p = UART_PARITY_NONE;
+    if (parity == 'E' || parity == 'e') p = UART_PARITY_EVEN;
+    if (parity == 'O' || parity == 'o') p = UART_PARITY_ODD;
+
+    uart_inst_t *u = uart_for(port);
+    uart_init(u, baud ? baud : 115200);
+    uart_set_format(u, (bits >= 5 && bits <= 8) ? bits : 8, (stop == 2) ? 2 : 1, p);
+    uart_set_fifo_enabled(u, true);
+    gpio_set_function((uint)tx, GPIO_FUNC_UART);
+    gpio_set_function((uint)rx, GPIO_FUNC_UART);
+    return port;
+}
+
+int hal_uart_write(int port, const uint8_t *data, size_t len) {
+    uart_write_blocking(uart_for(port), data, len);
+    return (int)len;
+}
+
+int hal_uart_read_byte(int port) {
+    uart_inst_t *u = uart_for(port);
+    return uart_is_readable(u) ? (int)uart_getc(u) : HAL_ERR_TIMEOUT;
 }

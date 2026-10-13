@@ -192,3 +192,49 @@ int hal_i2c_read(int bus, uint8_t addr, uint8_t *buf, size_t len) {
     for (size_t i = 0; i < n; i++) buf[i] = (uint8_t)w->read();
     return (int)n;
 }
+
+// ---------- UART ----------
+// Serial1 and Serial2 through the GPIO matrix; UART0 stays free for the
+// boot console. Same port-choice rule as I2C.
+
+static HardwareSerial *const s_uart[2] = { &Serial1, &Serial2 };
+static int s_uart_pins[2][2] = { { -1, -1 }, { -1, -1 } };
+
+static uint32_t uart_config(uint8_t bits, char parity, uint8_t stop) {
+    static const uint32_t cfg[4][3][2] = {
+        { { SERIAL_5N1, SERIAL_5N2 }, { SERIAL_5E1, SERIAL_5E2 }, { SERIAL_5O1, SERIAL_5O2 } },
+        { { SERIAL_6N1, SERIAL_6N2 }, { SERIAL_6E1, SERIAL_6E2 }, { SERIAL_6O1, SERIAL_6O2 } },
+        { { SERIAL_7N1, SERIAL_7N2 }, { SERIAL_7E1, SERIAL_7E2 }, { SERIAL_7O1, SERIAL_7O2 } },
+        { { SERIAL_8N1, SERIAL_8N2 }, { SERIAL_8E1, SERIAL_8E2 }, { SERIAL_8O1, SERIAL_8O2 } },
+    };
+    int b = (bits >= 5 && bits <= 8) ? bits - 5 : 3;
+    int p = (parity == 'E' || parity == 'e') ? 1 : (parity == 'O' || parity == 'o') ? 2 : 0;
+    return cfg[b][p][stop == 2 ? 1 : 0];
+}
+
+int hal_uart_open(int tx, int rx, uint32_t baud, uint8_t bits, char parity, uint8_t stop) {
+    if (!hal_gpio_valid(tx) || !hal_gpio_valid(rx)) return HAL_ERR_PIN;
+    int port = -1;
+    for (int u = 0; u < 2 && port < 0; u++)
+        if (s_uart_pins[u][0] == tx && s_uart_pins[u][1] == rx) port = u;
+    for (int u = 0; u < 2 && port < 0; u++)
+        if (s_uart_pins[u][0] < 0) port = u;
+    if (port < 0) port = 0;
+
+    HardwareSerial *u = s_uart[port];
+    u->end();
+    u->begin(baud ? baud : 115200, uart_config(bits, parity, stop), rx, tx);
+    s_uart_pins[port][0] = tx;
+    s_uart_pins[port][1] = rx;
+    return port;
+}
+
+int hal_uart_write(int port, const uint8_t *data, size_t len) {
+    s_uart[port & 1]->write(data, len);
+    return (int)len;
+}
+
+int hal_uart_read_byte(int port) {
+    HardwareSerial *u = s_uart[port & 1];
+    return u->available() > 0 ? u->read() : HAL_ERR_TIMEOUT;
+}

@@ -4,9 +4,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#include "pico/stdlib.h"
-#include "hardware/uart.h"
-#include "hardware/gpio.h"
+#include "hal/hal.h"
 
 #include "bus/bus_common.h"   // app_cfg_t (contains uart_* fields)
 #include "bus/bus_if.h"        // bus_t, sensor_cfg_t
@@ -30,50 +28,15 @@ typedef struct {
     bool      pre_done;
 
     // runtime
-    uart_inst_t *uart;
+    int       port;            // hal_uart_open() handle
 } uart_ctx_t;
-
-/* ------------------------- Helpers / mapping -------------------------- */
-// RP2040 UART pin groups (TX/RX):
-//  - uart0: {0,1}, {12,13}, {16,17}
-//  - uart1: {4,5}, {8,9},   {20,21}
-static uart_inst_t* pick_uart_for_pins(int tx, int rx) {
-    // simple heuristic: if either pin belongs to an "uart1 pair", use uart1
-    switch (tx) {
-        case 4: case 5: case 8: case 9: case 20: case 21: return uart1;
-        default: break;
-    }
-    switch (rx) {
-        case 4: case 5: case 8: case 9: case 20: case 21: return uart1;
-        default: break;
-    }
-    return uart0;
-}
-
-static uart_parity_t map_parity(char p) {
-    if (p == 'E' || p == 'e') return UART_PARITY_EVEN;
-    if (p == 'O' || p == 'o') return UART_PARITY_ODD;
-    return UART_PARITY_NONE;
-}
-
-static void uart_setup(uart_ctx_t *c) {
-    uart_init(c->uart, c->baud ? c->baud : 115200);
-    uart_set_format(c->uart,
-                    (c->bits >= 5 && c->bits <= 8) ? c->bits : 8,
-                    (c->stop == 2) ? 2 : 1,
-                    map_parity(c->parity_ch));
-    uart_set_fifo_enabled(c->uart, true);
-
-    gpio_set_function(c->tx, GPIO_FUNC_UART);
-    gpio_set_function(c->rx, GPIO_FUNC_UART);
-}
 
 /* --------------------------- Pre sequence ----------------------------- */
 static int do_pre_writes(uart_ctx_t *c) {
     if (!c->pre_len) return 0;
     // write blocking all pre bytes
-    uart_write_blocking(c->uart, c->pre, c->pre_len);
-    if (c->post_delay_ms) sleep_ms(c->post_delay_ms);
+    hal_uart_write(c->port, c->pre, c->pre_len);
+    if (c->post_delay_ms) hal_delay_ms(c->post_delay_ms);
     return c->pre_len;
 }
 
@@ -99,8 +62,13 @@ static int uart_init_cfg(const sensor_cfg_t *scfg, void **out_ctx) {
     c->post_delay_ms = cfg->uart_post_delay_ms;
     c->pre_done    = false;
 
-    c->uart = pick_uart_for_pins(c->tx, c->rx);
-    uart_setup(c);
+    c->port = hal_uart_open(c->tx, c->rx, c->baud, c->bits, c->parity_ch, c->stop);
+    if (c->port < 0) {
+        printf("[UART] cannot open TX %d RX %d (err=%d)\n", c->tx, c->rx, c->port);
+        int err = c->port;
+        free(c);
+        return err;
+    }
 
     // Optional: send pre once on init (good for wakeups)
     if (c->pre_len) {
@@ -134,15 +102,15 @@ static int uart_poll_once(void *ctx_, uint8_t *buf, size_t cap) {
     // We do a short, bounded read window to remain non-blocking at scheduler level.
     const int POLL_WINDOW_MS = 30;          // total read window (tweakable)
     const int QUIET_GAP_MS   = 2;           // break early if no bytes for this duration
-    absolute_time_t t0 = get_absolute_time();
-    absolute_time_t last_rx = t0;
+    uint64_t t0 = hal_time_us();
+    uint64_t last_rx = t0;
 
     while (true) {
         // Consume all readily available bytes (bounded by want_max)
-        while (n < want_max && uart_is_readable(c->uart)) {
-            int ch = uart_getc(c->uart);
+        int ch;
+        while (n < want_max && (ch = hal_uart_read_byte(c->port)) >= 0) {
             buf[n++] = (uint8_t)ch;
-            last_rx = get_absolute_time();
+            last_rx = hal_time_us();
 
             if (c->line_mode && ch == '\n') {
                 return n; // stop at newline in line mode
@@ -152,15 +120,15 @@ static int uart_poll_once(void *ctx_, uint8_t *buf, size_t cap) {
         if (n >= want_max) break;
 
         // Check timing windows
-        absolute_time_t now = get_absolute_time();
-        int64_t elapsed_ms = absolute_time_diff_us(t0, now) / 1000;
+        uint64_t now = hal_time_us();
+        int64_t elapsed_ms = (int64_t)(now - t0) / 1000;
         if (elapsed_ms >= POLL_WINDOW_MS) break;
 
-        int64_t quiet_ms = absolute_time_diff_us(last_rx, now) / 1000;
+        int64_t quiet_ms = (int64_t)(now - last_rx) / 1000;
         if (quiet_ms >= QUIET_GAP_MS) break;
 
         // tiny nap to yield CPU but stay responsive
-        sleep_us(200);
+        hal_delay_us(200);
     }
     return n;  // 0..want_max
 }
@@ -169,7 +137,7 @@ static void uart_stream_start(void *ctx_) {
     uart_ctx_t *c = (uart_ctx_t*)ctx_;
     (void)c;
     // Optional: flush RX FIFO so streaming starts clean
-    while (uart_is_readable(c->uart)) (void)uart_getc(c->uart);
+    while (hal_uart_read_byte(c->port) >= 0) {}
 }
 
 static void uart_stream_stop(void *ctx_) {

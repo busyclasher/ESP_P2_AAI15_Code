@@ -113,6 +113,20 @@ int hal_i2c_write(int bus, uint8_t addr, const uint8_t *data, size_t len, bool n
 // HAL_ERR_IO if the device does not acknowledge.
 int hal_i2c_read(int bus, uint8_t addr, uint8_t *buf, size_t len);
 
+// ---------- UART (used by bus/uart.c) ----------
+
+// Opens a UART on tx/rx with the frame format (bits 5..8, parity 'N'/'E'/'O',
+// stop 1 or 2). Returns a port handle (>= 0), HAL_ERR_PIN, or
+// HAL_ERR_UNSUPPORTED if no UART is free.
+int hal_uart_open(int tx, int rx, uint32_t baud, uint8_t bits, char parity, uint8_t stop);
+
+// Queues len bytes for transmission, blocking until they fit. Returns len.
+int hal_uart_write(int port, const uint8_t *data, size_t len);
+
+// Next received byte (0..255), or HAL_ERR_TIMEOUT if none is waiting.
+// Never blocks.
+int hal_uart_read_byte(int port);
+
 #ifdef __cplusplus
 }
 #endif
