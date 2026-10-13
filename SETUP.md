@@ -2,7 +2,7 @@
 
 Sections 0–13 are the complete guide for getting the existing Pico reference firmware running on your own hardware, from an empty machine to a board that is confirmed working. They cover what to install, wire, build, flash and verify. The separate ESP32-S3 Arduino setup plan follows section 13.
 
-The Pico procedure was verified end to end on macOS (Apple Silicon) on 2026-09-18. Windows and Linux notes are marked wherever a step differs. The ESP32-S3 Arduino procedure is not yet hardware-verified.
+The Pico procedure was verified end to end on macOS (Apple Silicon) on 2026-09-18. Windows and Linux notes are marked wherever a step differs. The minimal ESP32-S3 Arduino sketch was verified on one physical board on 2026-10-13; broader board integration remains pending.
 
 ## 0. What you are building, and on what hardware
 
@@ -322,23 +322,28 @@ If your assigned board turns out to be an original Pico W (RP2040) rather than a
 
 If the team's logic level shifter arrives, it can replace the Echo resistor divider in section 3. Keep the Pico side at 3.3 V logic and power the HC-SR04 as its own specification requires.
 
-## ESP32-S3 Arduino setup (Tasks 7–9; pending verification)
+## ESP32-S3 Arduino setup (Tasks 7–9; local bring-up verified)
 
 The ESP32-S3 port uses **Arduino IDE with the Arduino-ESP32 core**. The Pico instructions above and the root Pico `CMakeLists.txt` remain the reference build. The S3 sketch is in [`esp32s3/`](esp32s3/README.md) and is limited to serial bring-up. Do not treat its successful upload as framework parity.
 
-### Environment versions to pin (Task 7)
+### Arduino environment baseline (Task 7)
 
-| Item | Team value |
+| Item | Project baseline |
 | --- | --- |
-| Arduino IDE version | **TODO — agree and record exact version** |
-| Arduino-ESP32 core version | **TODO — agree and record exact version before claiming a reproducible build** |
-| Required external Arduino libraries | **None for the minimal bring-up sketch. TODO — name and pin each library when a later task selects it** |
+| Arduino IDE version | **2.3.10** |
+| Arduino-ESP32 core version | **3.3.12** (`esp32 by Espressif Systems` in Boards Manager) |
+| Board profile / FQBN | **ESP32S3 Dev Module** / `esp32:esp32:esp32s3` with the Tools options recorded below |
+| Required external Arduino libraries | **None for the minimal bring-up sketch.** Name and pin each library when a later task selects it. |
 
-All team members should use the same recorded versions. The team has not yet selected an Arduino-ESP32 core version. Task 7 is complete only when every machine compiles the same minimal S3 sketch using the pinned IDE and core versions.
+Sitt selected the locally tested versions above as the project baseline on 2026-10-13. All team members should install these exact versions and compile the same minimal S3 sketch with the board options below. Task 7 is complete only when every machine has passed that check; verification on the other machines is still outstanding. Arduino CLI 1.5.1 was present in the earlier local check, but the 2026-10-13 hardware test used the Arduino IDE workflow, so CLI is not part of this baseline.
+
+**Local preliminary checks — Sitt, Windows (not the team pin):** On 2026-09-30, Arduino IDE 2.3.10, its bundled Arduino CLI 1.5.1, and Arduino-ESP32 core 3.3.10 were found on this machine. At commit `8197902`, `esp32s3/esp32s3.ino` compiled with Arduino CLI using the generic `esp32:esp32:esp32s3` profile and its default options.
+
+On 2026-10-07, Arduino IDE 2.3.10 showed **esp32 by Espressif Systems 3.3.12 installed**. Its **Verify** action compiled the same sketch with **ESP32S3 Dev Module** selected: 273,621 bytes of program storage and 21,592 bytes of global variables were reported, with no compile error. The board was not connected during that check. The later physical upload and serial result is recorded below; Task 7 still needs the same build verified on the other team machines.
 
 1. Install the agreed Arduino IDE version from the [Arduino software page](https://www.arduino.cc/en/software).
 2. In Arduino IDE, open **File → Preferences** and add Espressif's stable Boards Manager URL to **Additional boards manager URLs**: `https://espressif.github.io/arduino-esp32/package_esp32_index.json`.
-3. Open **Tools → Board → Boards Manager**, find **esp32 by Espressif Systems**, and install the team's exact pinned Arduino-ESP32 core version. Select the ESP32-S3 board entry matching the confirmed hardware. Do not use an automatically selected latest version as the team pin.
+3. Open **Tools → Board → Boards Manager**, find **esp32 by Espressif Systems**, and install version **3.3.12**. Select **ESP32S3 Dev Module** for the HW-747 board used in this bring-up and apply the recorded options below.
 4. Install any later required external libraries through Library Manager at their recorded versions. The minimal sketch needs no external library.
 
 The [Arduino-ESP32 installation guide](https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html) documents the Boards Manager URL and installation flow.
@@ -349,17 +354,19 @@ Record these from the actual board markings, its matching pinout and a physical 
 
 | Item | Confirmed value |
 | --- | --- |
-| Exact Super Mini board/revision and ESP32-S3 module marking | **TODO** |
-| Flash size | **TODO** |
-| PSRAM presence and size | **TODO** |
-| Exposed, usable GPIOs and reserved/unsafe pins | **TODO — cite the matching board pinout** |
-| USB connector and serial path (`Serial` via native USB CDC or USB-to-UART bridge) | **TODO** |
-| Arduino IDE board profile | **TODO** |
-| Board-specific Flash Size and PSRAM menu choices | **TODO** |
-| Board-specific USB Mode, USB CDC On Boot and Upload Mode choices, if offered | **TODO** |
-| Port and any first-upload/boot-button procedure | **TODO** |
+| Exact Super Mini board/revision and ESP32-S3 module marking | User confirmed the physical board matches the supplied [HW-747 Super Mini pinout diagram](Pinout_Diagram_S3.jpg) on 2026-10-13; exact chip/module marking **TODO — read from the board** |
+| Flash size | 4 MB embedded flash, detected on COM6 with esptool v5.3.1 on 2026-10-13 |
+| PSRAM presence and size | 2 MB embedded PSRAM (AP_3v3), reported by esptool; its use from Arduino remains untested |
+| Exposed, usable GPIOs and reserved/unsafe pins | Candidate exposed pins are shown in the user-confirmed [HW-747 pinout diagram](Pinout_Diagram_S3.jpg); safe/reserved/strapping pins and final assignments **TODO — verify before wiring sensors** |
+| USB connector and serial path (`Serial` via native USB CDC or USB-to-UART bridge) | USB-Serial/JTAG reported by esptool; the board enumerated on COM6 as `ESP32 Family Device, Ozobot DRVKit`, and sketch `Serial` output was observed on COM6 at 115200 baud |
+| Arduino IDE board profile | `ESP32S3 Dev Module` used for local compile, upload, and Serial Monitor verification |
+| Board-specific Flash Size and PSRAM menu choices | Flash Size: `4MB (32Mb)`; PSRAM: `Disabled` for the minimal bring-up sketch, despite 2 MB being present; a working PSRAM mode for later tasks is **TODO** |
+| Board-specific USB Mode, USB CDC On Boot and Upload Mode choices, if offered | USB-Serial/JTAG connection; USB CDC On Boot: `Enabled`; Upload Mode: `UART0 / Hardware CDC`; separate USB Mode option **TODO — not visible in the supplied menu screenshot** |
+| Port and any first-upload/boot-button procedure | COM6 used for upload and monitoring; no manual BOOT-button step was needed in this local run; repeatability on other boards **TODO** |
 
-The exact USB and upload settings depend on the board's wiring and Arduino-ESP32 core version. Follow the matching board documentation and verify the result on hardware; do not assume that every ESP32-S3 Super Mini exposes the same console path. Espressif's [USB CDC guide](https://docs.espressif.com/projects/arduino-esp32/en/latest/tutorials/cdc_dfu_flash.html) explains the relevant Arduino menu options.
+The read-only probe was `esptool.exe --chip esp32s3 --port COM6 flash-id`; it did not upload or erase firmware. The exact USB and upload settings depend on the board's wiring and Arduino-ESP32 core version. Follow the matching board documentation and verify the result on hardware; do not assume that every ESP32-S3 Super Mini exposes the same console path. Espressif's [USB CDC guide](https://docs.espressif.com/projects/arduino-esp32/en/latest/tutorials/cdc_dfu_flash.html) explains the relevant Arduino menu options.
+
+The Arduino IDE **Tools** menu shown after the successful local upload/monitor run also had these values: Flash Mode `QIO 80MHz`; Partition Scheme `Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)`; Upload Speed `921600`; CPU Frequency `240MHz (WiFi)`; Events Run On `Core 1`; Arduino Runs On `Core 1`. USB DFU On Boot, USB Firmware MSC On Boot, JTAG Adapter, and Erase All Flash Before Sketch Upload were `Disabled`; Core Debug Level was `None`. Record any further menu options if the board profile exposes them.
 
 ### Compile, upload and monitor the minimal sketch (Task 9)
 
@@ -368,7 +375,9 @@ The exact USB and upload settings depend on the board's wiring and Arduino-ESP32
 3. Click **Verify/Compile**, then **Upload**. Record the IDE, core and board settings used for the result.
 4. Open **Serial Monitor** at **115200 baud** on the confirmed console port. The sketch repeats `Hello from ESP32-S3`, so the line remains visible even if Serial Monitor opens after startup. If upload succeeds but the line is absent, check the actual USB/serial path and IDE USB settings before changing the sketch.
 
-Task 9 passes only after the line is observed on the physical Super Mini. No S3 sensor pinout, flash or PSRAM value has yet been verified.
+Task 9's local hardware check passes after the line is observed on the physical Super Mini. The safe sensor pinout and a working Arduino PSRAM mode remain unverified.
+
+**Local bring-up result — Sitt, Windows, 2026-10-13:** With Arduino IDE 2.3.10, Arduino-ESP32 core 3.3.12, `ESP32S3 Dev Module`, and COM6, the minimal sketch compiled and uploaded successfully. Arduino IDE reported that the written data hash was verified and completed the upload. Serial Monitor at 115200 baud showed `Hello from ESP32-S3` repeatedly at approximately one-second intervals. This verifies the sketch, upload, and console path on this board with the Tools menu selections recorded above. The retained observation record is [`parity/logs/9-arduino-bringup.txt`](parity/logs/9-arduino-bringup.txt); team-wide Task 7 verification remains outstanding.
 
 ### Port architecture for later tasks
 
