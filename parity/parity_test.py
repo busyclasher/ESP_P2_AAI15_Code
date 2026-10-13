@@ -176,6 +176,32 @@ STAGES = {
         ("stop-light", "STOP", "STOP", 2.5, [r"^STOP$"]),
         ("clear-light", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
     ],
+    # Task 16: GY-511 (LSM303DLHC) on SDA GP16, SCL GP17: magnetometer 0x1E, accelerometer 0x19.
+    "4c-mag": [
+        ("clear-mag", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-mag-id", "Magnetometer identity registers 0x0A-0x0C", "BEGINCFG|name=MAGID|proto=i2c|mode=poll|freq_hz=1|i2c.sda=16|i2c.scl=17|i2c.addr=0x1E"
+         "|i2c.reg=0x0A|i2c.reg_size=1|i2c.read_len=3|i2c.restart=1|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: MAGID\)"]),
+        ("cfg-acc", "Accelerometer on the same bus (two devices), set to 100 Hz", "BEGINCFG|name=ACC|proto=i2c|mode=poll|freq_hz=1|i2c.sda=16|i2c.scl=17|i2c.addr=0x19"
+         "|i2c.pre=0x20 0x57|i2c.reg=0xA8|i2c.reg_size=1|i2c.read_len=6|i2c.restart=1|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: ACC\)"]),
+        ("cfg-mag", "Magnetometer data, continuous mode, ±8.1 gauss range", "BEGINCFG|name=MAG|proto=i2c|mode=poll|freq_hz=1|i2c.sda=16|i2c.scl=17|i2c.addr=0x1E"
+         "|i2c.pre=0x00 0x10 0x01 0xE0 0x02 0x00|i2c.reg=0x03|i2c.reg_size=1|i2c.read_len=6|i2c.restart=1|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: MAG\)"]),
+        ("run-mag", "Identity reads H43; both devices publish", "RUN", 5.0,
+         [r"src=MAGID len=3 ts=\d+ : 48 34 33$", r"src=ACC len=6 ts=\d+ : ([0-9A-F]{2} ){5}[0-9A-F]{2}$",
+          r"src=MAG len=6 ts=\d+ : ([0-9A-F]{2} ){5}[0-9A-F]{2}$"]),
+        ("stop-mag", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-mag-2", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-norestart", "Identity read with a stop between write and read", "BEGINCFG|name=MAGNR|proto=i2c|mode=poll|freq_hz=1|i2c.sda=16|i2c.scl=17|i2c.addr=0x1E"
+         "|i2c.reg=0x0A|i2c.reg_size=1|i2c.read_len=3|i2c.restart=0|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: MAGNR\)"]),
+        ("run-norestart", "The device answers the same without a repeated start", "RUN", 3.5, [r"src=MAGNR len=3 ts=\d+ : 48 34 33$"]),
+        ("stop-nr", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-nr", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+        ("cfg-ghost", "A device that is not on the bus (0x2A, no set-up writes)", "BEGINCFG|name=GHOST|proto=i2c|mode=poll|freq_hz=1|i2c.sda=16|i2c.scl=17|i2c.addr=0x2A"
+         "|i2c.reg=0x00|i2c.reg_size=1|i2c.read_len=1|i2c.restart=1|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: GHOST\)"]),
+        ("run-ghost", "Reads from the missing device fail and publish nothing; the node keeps running", "RUN", 3.5,
+         [r"!src=GHOST len="]),
+        ("stop-ghost", "STOP", "STOP", 2.5, [r"^STOP$"]),
+        ("clear-ghost", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
+    ],
     # Rules on real HC-SR04 data (Trig GP16, Echo GP17). Move an object in and out of 30 cm.
     # 1740 us of echo is about 30 cm.
     "sonic-rule": [
