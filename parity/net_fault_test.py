@@ -105,8 +105,8 @@ def main():
         client.publish(cmd_t, "X" * 5000, qos=1)
         # Up to the client buffer the node truncates with a warning; beyond it
         # the MQTT library drops the connection and the node reconnects.
-        got = node.read(6, until=r"truncated|disconnected from broker")
-        ok = any(re.search(r"truncated|disconnected from broker", l) for _, l in got)
+        got = node.read(6, until=r"truncated|disconnected from broker|Connecting to")
+        ok = any(re.search(r"truncated|disconnected from broker|Connecting to", l) for _, l in got)
         results.append(("oversized-payload-refused", ok, "payload refused (truncated or connection reset)" if ok else "no sign of refusal"))
         mqtt_alive("alive-after-oversized")
 

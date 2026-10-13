@@ -7,6 +7,11 @@
 #   sh tools/s3.sh test <stage>      run a parity stage on the S3, e.g. 4a, 4b, 5-neg
 #   sh tools/s3.sh mqtt <broker-ip>  run the 27-step MQTT test (node s3-001)
 #   sh tools/s3.sh haltest           flash the HAL test sketch and run it
+#   sh tools/s3.sh model <broker-ip>     model upload, bad uploads, reboot (task 20)
+#   sh tools/s3.sh faults <broker-ip>    malformed/oversized input, Wi-Fi and broker loss
+#   sh tools/s3.sh flood <broker-ip>     MQTT queue saturation
+#   sh tools/s3.sh timing                NFR1 sample period and jitter (about 4 min)
+#   sh tools/s3.sh endurance <broker-ip> NFR6 30-minute run
 #
 # The port is found by the board's Espressif USB ID; set PORT=... to override.
 # Wi-Fi details go in esp32s3_edge/wifi_credentials.h (copy the .example).
@@ -36,5 +41,14 @@ case "$1" in
   mqtt)    need_port; [ -n "$2" ] || { echo "usage: sh tools/s3.sh mqtt <broker-ip>"; exit 1; }
            $PY parity/mqtt_test.py --broker "$2" --node "${NODE:-s3-001}" --board s3 --port "$PORT" ;;
   haltest) build esp32s3_haltest && upload esp32s3_haltest && $PY parity/hal_test.py --port "$PORT" ;;
-  *)       sed -n '2,13p' "$0" ;;
+  model|faults|flood|endurance)
+           need_port; [ -n "$2" ] || { echo "usage: sh tools/s3.sh $1 <broker-ip>"; exit 1; }
+           case "$1" in
+             model)     $PY parity/model_test.py --broker "$2" --port "$PORT" ;;
+             faults)    $PY parity/net_fault_test.py --broker "$2" --port "$PORT" ;;
+             flood)     $PY parity/flood_test.py --broker "$2" --node "${NODE:-s3-001}" --board s3 ;;
+             endurance) $PY parity/endurance_test.py --broker "$2" --port "$PORT" ;;
+           esac ;;
+  timing)  need_port; $PY parity/timing_test.py --board s3 --port "$PORT" ;;
+  *)       sed -n '2,17p' "$0" ;;
 esac

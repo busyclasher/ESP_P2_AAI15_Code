@@ -150,10 +150,13 @@ Final build on 2026-10-13: HW-747 Super Mini (ESP32-S3, 4 MB flash, 2 MB PSRAM),
 | `t08` | T-07, T-08 | 26/26 | |
 | `t09` | T-09 | 5/5 | |
 | `t10` | T-10 | 7/7 | Run after a board reset: an earlier stage leaves GPIO5 driving the 5↔6 jumper |
-| `mqtt_test.py` | P-25 to P-29 | 26/27 | D-09, D-10, D-12 fixed; bridging verified. Fail: `model-upload` (P-29) waits for task 20 model storage |
+| `mqtt_test.py` | P-25 to P-29 | 27/27 | D-09, D-10, D-12 fixed; bridging verified; the model upload is verified, saved and auto-loaded |
+| `model_test.py` | T-14, T-15, T-16 | 9/9 | Valid upload saved to LittleFS and loaded; wrong CRC32, 300 KB and interrupted uploads refused with the previous model still running inference; after a reset the saved model auto-loads with no re-upload; arena 2,908 of 65,536 B used |
 | `flood_test.py` | T-13 | Pass | Heartbeat kept through 2,547 messages in 60 s; no reset |
 | `net_fault_test.py` | T-11, T-12 | 8/9, then fixed in the test | Malformed JSON refused; broker loss back in 2.2 s; Wi-Fi drop back in 1.8 s with 20 samples taken offline (FR21); heap 54,200 → 53,764 B; no reset. A 5,000-byte payload exceeds the client buffer, so the library drops the connection and the node reconnects and answers; the test expected only the truncation warning and now accepts both |
 | `timing_test.py` | NFR1 | Pass | Mean interval 101.28, 504.52, 1005.72 and 2019.88 ms for 100, 500, 1000 and 2000 ms targets (within 5%, ≥100 samples); 10 ms measured at 10.99 ms and 50 ms at 51.15 ms |
 | `TASKS` after the suite | T-01 | Pass | Stack free: SchedulerTask 12,036, MQTTTask 5,404, ControlTask 2,180, InferenceTask 7,416, ApplicationTask 3,320, BenchmarkTask 2,260 B. Internal heap 53,716 B (minimum 49,376 B); PSRAM free 2,011,040 B; no watchdog reset or panic in any log |
 
-**Not run on the S3:** 4c-sonic (P-12, P-13) needs a 1:2 divider on Echo and the kit has only two 50 kΩ resistors; 4c-i2c (P-15, task 16) needs the TSL2561 or magnetometer wired to the S3; P-30 radar deferred as on the Pico; NFR6 30-minute endurance run still to do; the Pico has not been re-run on the shared-code changes in this section.
+**Pico regression:** the Pico firmware (`project_v3`) builds with every shared-code change above and `tools/check_hal_boundary.sh` passes; the Pico hardware re-run is still to do.
+
+**Not run on the S3:** 4c-sonic (P-12, P-13) needs a 1:2 divider on Echo and the kit has only two 50 kΩ resistors; 4c-i2c (P-15, task 16) needs the TSL2561 or magnetometer wired to the S3; P-30 radar deferred as on the Pico; NFR6 30-minute endurance run (`endurance_test.py`) still to do: a first attempt stopped after 9 minutes when the USB connection dropped, with no reset or panic in the log.
