@@ -1,6 +1,7 @@
 // scheduler.c — multi-sensor (I2C0 + I2C1 + UART + GPIO) with <pico/time.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "hal/hal.h"
 #include "application/output_format.h"
 #include "bus/bus_common.h"
@@ -29,6 +30,8 @@ typedef struct {
     app_cfg_t cfg_copy;         // keep a private copy
     bool streaming;
     uint64_t next_run;          // hal_time_us() deadline, 0 = not armed
+    uint32_t overruns;          // samples skipped because the scheduler fell behind
+    uint32_t last_overrun_log_ms;
     bool in_use;
 } active_sensor_t;
 
@@ -47,6 +50,11 @@ int scheduler_count(void) {
 
 /* Initialize scheduler */
 void scheduler_reset(void) {
+    /* Driver contexts are calloc'd by init_cfg; free them or every CLEAR
+       leaks one per sensor. Edge-counter interrupts only touch HAL state. */
+    for (int i = 0; i < MAX_ACTIVE; i++) {
+        if (g_sensors[i].in_use && g_sensors[i].ctx) free(g_sensors[i].ctx);
+    }
     memset(g_sensors, 0, sizeof(g_sensors));
     SLOG("reset: cleared %d slots", (int)MAX_ACTIVE);
 }
@@ -64,6 +72,10 @@ void scheduler_dump(void) {
 }
 /* Add one config block as a new active sensor */
 int scheduler_add_config(const app_cfg_t *cfg_in) {
+    if (cfg_in->cfg_error[0]) {
+        printf("[SCHED] config %s refused: %s\n", cfg_in->name, cfg_in->cfg_error);
+        return -5;
+    }
     for (int i = 0; i < MAX_ACTIVE; i++) {
         if (!g_sensors[i].in_use) {
             active_sensor_t *S = &g_sensors[i];
@@ -229,6 +241,19 @@ void scheduler_run_all(bool running) {
 if (cfg->mode == sample_mode_poll) {
     int64_t dt_us = (int64_t)(S->next_run - now); // to - from
     if (dt_us <= 0) {
+        // More than one period late means at least one sample was skipped:
+        // report it (rate-limited) instead of slowing down silently (T-04).
+        uint32_t late_ms = (uint32_t)(-dt_us / 1000);
+        float fp = cfg->freq_hz > 0.0f ? 1000.0f / cfg->freq_hz : 1000.0f;
+        if (S->next_run != 0 && late_ms > (uint32_t)(fp * 1.1f)) {
+            S->overruns++;
+            uint32_t now_ms = hal_time_ms();
+            if (now_ms - S->last_overrun_log_ms >= 5000u) {
+                printf("[SCHED] overload: %s ran %u ms late (period %u ms, %u skipped so far)\n",
+                       cfg->name, (unsigned)late_ms, (unsigned)(fp + 0.5f), (unsigned)S->overruns);
+                S->last_overrun_log_ms = now_ms;
+            }
+        }
         did_poll = true;
         n = S->bus->poll_once ? S->bus->poll_once(S->ctx, buf, sizeof(buf)) : -1;
 

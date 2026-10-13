@@ -62,6 +62,7 @@ void cfg_parse_line(const char *line_in, app_cfg_t *cfg) {
         else if (!strcmp(v,"uart")) cfg->proto = proto_uart;
         else if (!strcmp(v,"gpio")) cfg->proto = proto_gpio;
         else if (!strcmp(v,"mqtt")) cfg->proto = proto_mqtt;   // NEW
+        else snprintf(cfg->cfg_error, sizeof cfg->cfg_error, "unsupported proto '%s'", v);
     } else if (!strcmp(key, "mode")) {
         char v[8]={0}; strncpy(v,val,7); v[7]=0; str_lower(v);
         cfg->mode = (!strcmp(v,"stream")) ? sample_mode_stream : sample_mode_poll;

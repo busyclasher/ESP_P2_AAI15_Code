@@ -81,6 +81,39 @@ int hal_gpio_toggle(int pin) {
     return next;
 }
 
+int hal_gpio_pulse(int pin, uint32_t ms) {
+    if (!hal_gpio_valid(pin)) return HAL_ERR_PIN;
+    // Same sequence as the reference PULSE action, which blocks for ms.
+    hal_gpio_mode(pin, HAL_GPIO_OUTPUT);
+    gpio_put((uint)pin, 1);
+    sleep_ms(ms);
+    hal_gpio_mode(pin, HAL_GPIO_OUTPUT);
+    gpio_put((uint)pin, 0);
+    return HAL_OK;
+}
+
+static volatile uint32_t s_edges[NUM_BANK0_GPIOS];
+
+static void edge_isr(uint gpio, uint32_t events) {
+    if (gpio < NUM_BANK0_GPIOS)
+        s_edges[gpio] += ((events & GPIO_IRQ_EDGE_RISE) ? 1u : 0u) + ((events & GPIO_IRQ_EDGE_FALL) ? 1u : 0u);
+}
+
+int hal_gpio_count_edges(int pin, bool enable) {
+    if (!hal_gpio_valid(pin)) return HAL_ERR_PIN;
+    if (enable) {
+        s_edges[pin] = 0;
+        gpio_set_irq_enabled_with_callback((uint)pin, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, edge_isr);
+    } else {
+        gpio_set_irq_enabled((uint)pin, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false);
+    }
+    return HAL_OK;
+}
+
+uint32_t hal_gpio_edge_count(int pin) {
+    return hal_gpio_valid(pin) ? s_edges[pin] : 0;
+}
+
 // ---------- PWM ----------
 
 int hal_pwm_set(int pin, float duty) {

@@ -107,7 +107,8 @@ void repl_init_defaults(app_cfg_t *cfg) {
     cfg->i2c_addr=0x76; cfg->i2c_reg_size=1; cfg->i2c_read_len=1; cfg->i2c_restart=true;
     cfg->uart_tx=0; cfg->uart_rx=1; cfg->uart_baud=9600;
     cfg->uart_bits=8; cfg->uart_parity='N'; cfg->uart_stop=1; cfg->uart_read_len=64;
-    cfg->gpio_pin=2; cfg->gpio_trig=14; cfg->gpio_echo=15; cfg->gpio_pulse_timeout_us=30000;
+    // No default pins: a GPIO config must name its pins (D-02)
+    cfg->gpio_pin=-1; cfg->gpio_trig=-1; cfg->gpio_echo=-1; cfg->gpio_pulse_timeout_us=30000;
 }
 
 void repl_show_help(void) {

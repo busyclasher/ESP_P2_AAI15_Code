@@ -74,6 +74,10 @@ typedef struct {
     // -------- MQTT --------
     char      remote_node[32];   // node to follow
     char      remote_source[32]; // sensor name on that node
+
+    // Set by the parser when a value is invalid; the scheduler then refuses
+    // the config instead of guessing (D-01).
+    char      cfg_error[48];
 } app_cfg_t;
 
 // ---------- scheduler ----------

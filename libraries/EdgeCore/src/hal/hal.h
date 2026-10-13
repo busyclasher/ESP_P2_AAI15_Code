@@ -86,6 +86,21 @@ int hal_gpio_read(int pin);
 // before switching. Returns the new level (0 or 1) or HAL_ERR_PIN.
 int hal_gpio_toggle(int pin);
 
+// Drives pin high for ms milliseconds, then low. On an RTOS target it returns
+// at once and a one-shot timer ends the pulse, so the caller never sleeps in
+// a rule action; the Pico keeps the reference behaviour and blocks for ms.
+// Returns HAL_OK, HAL_ERR_PIN, or HAL_ERR_UNSUPPORTED if no timer is free.
+int hal_gpio_pulse(int pin, uint32_t ms);
+
+// Counts both edges on pin from an interrupt, so no edge is lost between
+// samples. enable=false stops counting. Returns HAL_OK, HAL_ERR_PIN, or
+// HAL_ERR_UNSUPPORTED if the pin cannot interrupt.
+int hal_gpio_count_edges(int pin, bool enable);
+
+// Edges counted on pin since counting was last enabled. Never blocks; the
+// 32-bit read is atomic. ISR-safe.
+uint32_t hal_gpio_edge_count(int pin);
+
 // ---------- PWM ----------
 
 // Starts PWM on pin with duty in 0.0..1.0 (clamped), resolution 1/1000.

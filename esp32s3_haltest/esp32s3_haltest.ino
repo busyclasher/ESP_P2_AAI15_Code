@@ -90,6 +90,66 @@ static void run_selftest(void) {
     check("pwm-set-and-stop", p1 == HAL_OK && p2 == HAL_OK && p3 == HAL_OK && hal_gpio_read(4) == 0, d);
     hal_gpio_mode(4, HAL_GPIO_INPUT);
 
+    // Measured checks through the jumper between GPIO5 and GPIO6 (the S3 pins
+    // for the Pico's GP21->GP22 loopback). Skipped when no jumper is fitted.
+    hal_gpio_mode(6, HAL_GPIO_INPUT_PULLDOWN);
+    hal_gpio_mode(5, HAL_GPIO_OUTPUT);
+    hal_gpio_write(5, 1);
+    hal_delay_us(50);
+    bool jumper = hal_gpio_read(6) == 1;
+    hal_gpio_write(5, 0);
+    hal_delay_us(50);
+    jumper = jumper && hal_gpio_read(6) == 0;
+    if (!jumper) {
+        printf("[HALTEST] SKIP jumper-measurements no jumper between GPIO5 and GPIO6\n");
+    } else {
+        static const float duties[] = { 0.25f, 0.50f, 0.75f };
+        for (float duty : duties) {
+            hal_pwm_set(5, duty);
+            hal_delay_ms(5);
+            uint32_t high = 0;
+            const uint32_t n = 40000;
+            for (uint32_t i = 0; i < n; i++) high += hal_gpio_read(6) > 0;
+            float measured = (float)high / n;
+            char name[24];
+            snprintf(name, sizeof name, "pwm-duty-%02d", (int)(duty * 100 + 0.5f));
+            snprintf(d, sizeof d, "set %.2f measured %.3f", duty, measured);
+            check(name, fabsf(measured - duty) <= 0.03f, d);
+        }
+        hal_pwm_stop(5);
+
+        uint64_t t0 = hal_time_us();
+        int pr = hal_gpio_pulse(5, 200);
+        uint64_t ret_us = hal_time_us() - t0;
+        while (hal_gpio_read(6) <= 0 && hal_time_us() - t0 < 50000) taskYIELD();
+        uint64_t rise = hal_time_us();
+        while (hal_gpio_read(6) > 0 && hal_time_us() - t0 < 400000) taskYIELD();
+        uint64_t width = hal_time_us() - rise;
+        snprintf(d, sizeof d, "returned after %llu us, high %llu us",
+                 (unsigned long long)ret_us, (unsigned long long)width);
+        check("pulse-200ms-nonblocking", pr == HAL_OK && ret_us < 1000 && width >= 199000 && width <= 202000, d);
+
+        // T-05: every edge is counted, well above the 1 kHz limit
+        hal_gpio_mode(6, HAL_GPIO_INPUT_PULLDOWN);
+        hal_gpio_mode(5, HAL_GPIO_OUTPUT);
+        hal_gpio_count_edges(6, true);
+        const uint32_t edges = 20000;
+        uint64_t te = hal_time_us();
+        for (uint32_t i = 0; i < edges; i++) {
+            hal_gpio_write(5, (i & 1) ? 0 : 1);
+            hal_delay_us(50);
+        }
+        uint64_t span = hal_time_us() - te;
+        hal_delay_ms(2);
+        uint32_t got = hal_gpio_edge_count(6);
+        hal_gpio_count_edges(6, false);
+        snprintf(d, sizeof d, "%lu edges at %.1f kHz, %lu counted", (unsigned long)edges,
+                 edges * 1000.0 / (double)span, (unsigned long)got);
+        check("edge-count-no-loss", got == edges, d);
+    }
+    hal_gpio_mode(5, HAL_GPIO_INPUT);
+    hal_gpio_mode(6, HAL_GPIO_INPUT);
+
     // The whole core is linked; services not ported yet answer with the
     // documented errors from libraries/EdgeS3/src/platform_stubs.c.
     static bool running = false, cfg_ready = false;
@@ -113,7 +173,7 @@ static void run_selftest(void) {
     scheduler_reset();
 
     bool mq = control_mqtt_start("127.0.0.1", 1883, "s3-node", "s3-node");
-    check("unported-mqtt-reports-offline", !mq, mq ? "started" : "mqtt_init=false");
+    check("mqtt-init-accepts-broker", mq, mq ? "mqtt_init=true (no network task in this sketch)" : "mqtt_init=false");
 
     inference_mgr_init();
     bool model = inference_mgr_load_base_model();

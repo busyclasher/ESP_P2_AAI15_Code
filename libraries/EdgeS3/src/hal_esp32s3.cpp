@@ -124,6 +124,50 @@ int hal_gpio_toggle(int pin) {
     return next;
 }
 
+// The Week 6 design ends a PULSE with a one-shot FreeRTOS software timer, so
+// SchedulerTask never sleeps inside a rule action.
+static TimerHandle_t s_pulse_timer[49];
+
+static void pulse_end(TimerHandle_t t) {
+    digitalWrite((int)(intptr_t)pvTimerGetTimerID(t), LOW);
+}
+
+int hal_gpio_pulse(int pin, uint32_t ms) {
+    if (!hal_gpio_valid(pin)) return HAL_ERR_PIN;
+    TickType_t ticks = pdMS_TO_TICKS(ms);
+    if (ticks == 0) ticks = 1;
+    if (!s_pulse_timer[pin]) {
+        s_pulse_timer[pin] = xTimerCreate("pulse", ticks, pdFALSE, (void *)(intptr_t)pin, pulse_end);
+        if (!s_pulse_timer[pin]) return HAL_ERR_UNSUPPORTED;
+    }
+    hal_gpio_mode(pin, HAL_GPIO_OUTPUT);
+    digitalWrite(pin, HIGH);
+    xTimerChangePeriod(s_pulse_timer[pin], ticks, 0);   // starts, or restarts, the timer
+    return HAL_OK;
+}
+
+static volatile uint32_t s_edges[49];
+
+static void IRAM_ATTR edge_isr(void *arg) {
+    int pin = (int)(intptr_t)arg;
+    s_edges[pin] = s_edges[pin] + 1;   // only this ISR writes it
+}
+
+int hal_gpio_count_edges(int pin, bool enable) {
+    if (!hal_gpio_valid(pin)) return HAL_ERR_PIN;
+    if (enable) {
+        s_edges[pin] = 0;
+        attachInterruptArg(pin, edge_isr, (void *)(intptr_t)pin, CHANGE);
+    } else {
+        detachInterrupt(pin);
+    }
+    return HAL_OK;
+}
+
+uint32_t hal_gpio_edge_count(int pin) {
+    return hal_gpio_valid(pin) ? s_edges[pin] : 0;
+}
+
 // ---------- PWM ----------
 
 static const uint32_t kPwmFreqHz = 37463;   // Pico: 150 MHz / 4 / 1001

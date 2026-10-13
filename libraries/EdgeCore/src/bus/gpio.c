@@ -15,6 +15,7 @@ typedef struct {
     uint8_t        last_state;  // debounced state (for digital/counter)
     uint8_t        last_raw;    // last raw GPIO value
     uint32_t       counter;     // edge counter (for "counter" mode)
+    bool           irq_count;   // counter mode: edges counted by interrupt
     bool           inited;
 } gpio_ctx_t;
 
@@ -107,7 +108,7 @@ static int measure_pulse_us(int trig_pin, int echo_pin,
 
     // ensure both are initialised
     hal_gpio_mode(trig_pin, HAL_GPIO_OUTPUT);   // driven low
-    hal_gpio_mode(echo_pin, HAL_GPIO_INPUT);
+    (void)echo_pin;   // input mode and pull are set once in init_cfg
 
     hal_delay_us(2);
 
@@ -236,7 +237,32 @@ static int gpio_init_cfg(const sensor_cfg_t *scfg, void **ctx_out)
     // --------- Fill sane defaults for any zero/NULL fields ----------
     if (!ctx->g.gpio_mode)              ctx->g.gpio_mode = "digital";
     if (!ctx->g.gpio_pull)              ctx->g.gpio_pull = "off";
-    if (ctx->g.gpio_pin == 0)           ctx->g.gpio_pin  = 2;
+
+    // Refuse missing or nonexistent pins instead of guessing (D-02, D-08)
+    if (mode_is_pulse(ctx)) {
+        if (ctx->g.gpio_trig < 0 || ctx->g.gpio_echo < 0) {
+            printf("[GPIO] %s: gpio.trig and gpio.echo are required\n", ctx->g.name);
+            free(ctx);
+            return -3;
+        }
+        if (!hal_gpio_valid(ctx->g.gpio_trig) || !hal_gpio_valid(ctx->g.gpio_echo)) {
+            printf("[GPIO] %s: pin %d or %d not available on this board\n",
+                   ctx->g.name, ctx->g.gpio_trig, ctx->g.gpio_echo);
+            free(ctx);
+            return -3;
+        }
+    } else {
+        if (ctx->g.gpio_pin < 0) {
+            printf("[GPIO] %s: gpio.pin is required\n", ctx->g.name);
+            free(ctx);
+            return -3;
+        }
+        if (!hal_gpio_valid(ctx->g.gpio_pin)) {
+            printf("[GPIO] %s: pin %d not available on this board\n", ctx->g.name, ctx->g.gpio_pin);
+            free(ctx);
+            return -3;
+        }
+    }
     if (ctx->g.gpio_debounce_ms <= 0)   ctx->g.gpio_debounce_ms = 50;
 
     // Pulse defaults
@@ -253,11 +279,17 @@ static int gpio_init_cfg(const sensor_cfg_t *scfg, void **ctx_out)
         ctx->last_state  = raw;
         ctx->last_change = hal_time_us();
         ctx->counter     = 0;
+        // Counter mode counts every edge by interrupt; the reference only saw
+        // one change per sample, so faster signals lost edges (task 15, T-05).
+        ctx->irq_count   = mode_is_counter(ctx) &&
+                           hal_gpio_count_edges(ctx->g.gpio_pin, true) == HAL_OK;
         ctx->inited      = true;
 
     } else if (mode_is_pulse(ctx)) {
         hal_gpio_mode(ctx->g.gpio_trig, HAL_GPIO_OUTPUT);   // driven low
-        hal_gpio_mode(ctx->g.gpio_echo, HAL_GPIO_INPUT);
+        // gpio.pull applies to Echo: an unconnected S3 pin can float high,
+        // which reads as a full-timeout echo (D-07).
+        set_input(ctx->g.gpio_echo, ctx->g.gpio_pull);
 
         ctx->inited = true;
 
@@ -348,11 +380,15 @@ static int gpio_poll_once(void *ctx_, uint8_t *buf, size_t cap)
     } else if (mode_is_counter(ctx)) {
         if (cap < 4) return -2;
 
-        uint8_t raw = read_input(ctx->g.gpio_pin, ctx->g.gpio_invert != 0);
-        if (raw != ctx->last_raw) {
-            // simple edge counter (both rising and falling)
-            ctx->counter++;
-            ctx->last_raw = raw;
+        if (ctx->irq_count) {
+            ctx->counter = hal_gpio_edge_count(ctx->g.gpio_pin);
+        } else {
+            uint8_t raw = read_input(ctx->g.gpio_pin, ctx->g.gpio_invert != 0);
+            if (raw != ctx->last_raw) {
+                // fallback: one change per sample (both rising and falling)
+                ctx->counter++;
+                ctx->last_raw = raw;
+            }
         }
 
         uint32_t c = ctx->counter;
