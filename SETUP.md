@@ -392,3 +392,41 @@ Shared Configurable Edge code
 ```
 
 Configuration parsing, the common sensor representation, scheduler, rule engine, output formatting, MQTT payload handling and application/ML logic should not call Arduino or Pico SDK functions directly. Platform operations belong in the HAL or platform drivers. If partitions, PSRAM access, a compatible TFLite Micro integration or measured performance require underlying ESP-IDF APIs from Arduino, document each exception and keep it below the shared-code boundary. The MQTT and ML library choices are still open and must be compatibility-tested and version-pinned before implementation.
+
+## Shared EdgeCore library and ESP32-S3 framework build (Tasks 12–13)
+
+The framework's platform-independent code, including the GPIO, I2C and UART drivers, is one Arduino library, [`libraries/EdgeCore/`](libraries/EdgeCore/), and both targets compile it from that folder; there is no second copy. The Pico build lists its sources in the root `CMakeLists.txt` (`EDGECORE`). The ESP32-S3 platform layer is a second library, [`libraries/EdgeS3/`](libraries/EdgeS3/). The minimal `esp32s3/` bring-up sketch stays free of framework code.
+
+| Folder | Contents |
+| --- | --- |
+| `libraries/EdgeCore/src/` | Shared code: configuration, scheduler, REPL, rules, bus drivers, MQTT payload handling, inference manager, and the HAL contract `hal/hal.h` |
+| `project_v3/` | Pico 2 W platform code: `main.c`, lwIP MQTT client, flash model transfer, TFLite Micro wrapper, `platform/pico/hal_pico.c` |
+| `libraries/EdgeS3/src/` | ESP32-S3 platform code: HAL backend, the FreeRTOS runtime from the Week 6 design review, and placeholders for services tasks 19–20 port |
+| `esp32s3_edge/` | ESP32-S3 firmware sketch |
+| `esp32s3_haltest/` | Task 12 HAL timing and console test sketch |
+
+The Pico build steps in sections 9–11 are unchanged.
+
+**Versions:** the task 7 baseline above (Arduino IDE 2.3.10, `esp32` core 3.3.12, no external libraries), with arduino-cli 1.5.1 for command-line builds. Board **ESP32S3 Dev Module** with USB Mode *Hardware CDC and JTAG*, USB CDC On Boot *Enabled*, Flash Size *4MB*, PSRAM *Disabled*, Partition Scheme *Default 4MB with spiffs*, matching the HW-747 bring-up in task 9. Task 8 confirms the final pins and PSRAM mode.
+
+### Arduino IDE
+
+1. Open **File → Preferences** and set **Sketchbook location** to the root of this repository. The IDE then finds `libraries/EdgeCore` and `libraries/EdgeS3` in place, with nothing copied.
+2. Install the `esp32` core at the version above (see the task 7 steps), then open `esp32s3_edge/esp32s3_edge.ino` (or `esp32s3_haltest/esp32s3_haltest.ino` for the HAL test).
+3. Select the board and options above under **Tools**, choose the S3's port, and click **Upload**. If the port does not appear or the upload fails, hold **BOOT** while plugging the board in, upload, then press **RESET**.
+4. Open **Serial Monitor** at 115200 baud. The firmware answers the same REPL commands as the Pico (`HELP`, `SHOW`, `RUN`, ...) plus `TASKS`, which prints each RTOS task's free stack and the heap.
+
+### Arduino CLI
+
+```bash
+arduino-cli config set board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli core update-index
+arduino-cli core install esp32:esp32@3.3.12
+FQBN=esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=4M,PSRAM=disabled,PartitionScheme=default
+arduino-cli compile --fqbn $FQBN --libraries libraries esp32s3_edge
+arduino-cli upload  --fqbn $FQBN --port /dev/cu.usbmodemXXXX esp32s3_edge
+```
+
+### Checks
+
+`python3 parity/parity_test.py --stage <stage> --board s3 --port <port>` runs a parity stage on the S3; `--board s3` swaps the Pico pin numbers for the S3 pins (GP16→1, GP17→2, GP18→7, GP20→4, GP21→5, GP22→6, GP25→8), so the loopback jumpers go on S3 pins 1↔2 and 5↔6. `python3 parity/hal_test.py` runs the HAL timing and console checks against `esp32s3_haltest`. `sh tools/check_hal_boundary.sh` compiles every EdgeCore source with no SDK headers, which shows that no shared module bypasses the HAL. With both boards plugged in, always pass `--port`.

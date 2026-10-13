@@ -2,6 +2,16 @@
 #ifndef JSMN_H
 #define JSMN_H
 
+/* The reference build passed -DJSMN_PARENT_LINKS=0 -DJSMN_STRICT=0 from CMake.
+   jsmn tests these with #ifdef, so defining them (even as 0) turns the option on.
+   They are set here so every EdgeCore build, Arduino included, behaves the same. */
+#ifndef JSMN_PARENT_LINKS
+#define JSMN_PARENT_LINKS 0
+#endif
+#ifndef JSMN_STRICT
+#define JSMN_STRICT 0
+#endif
+
 #include <stddef.h>
 
 #ifdef __cplusplus

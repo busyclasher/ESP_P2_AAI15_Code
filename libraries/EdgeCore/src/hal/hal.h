@@ -3,8 +3,8 @@
 //
 // Shared modules (configuration, scheduler, REPL, rules, MQTT payload handling,
 // inference manager) call these instead of the Pico SDK or Arduino APIs.
-// Each target implements them once: platform/pico/hal_pico.c for the Pico 2 W,
-// and the ESP32-S3 backend added in task 12.
+// Each target implements them once: project_v3/platform/pico/hal_pico.c for
+// the Pico 2 W and esp32s3_edge/src/hal_esp32s3.cpp for the ESP32-S3.
 //
 // Conventions
 //   Functions that can fail return HAL_OK (0) or a negative HAL_ERR_* code.
@@ -29,7 +29,7 @@ extern "C" {
 
 #define HAL_OK               0
 #define HAL_ERR_TIMEOUT     (-1)  // nothing arrived within the timeout
-#define HAL_ERR_PIN         (-2)  // pin does not exist on this board
+#define HAL_ERR_PIN         (-2)  // pin does not exist or is reserved on this board
 #define HAL_ERR_UNSUPPORTED (-3)  // operation not available on this target
 
 // ---------- time ----------
@@ -66,7 +66,8 @@ typedef enum {
     HAL_GPIO_OUTPUT            // pull state left unchanged
 } hal_gpio_mode_t;
 
-// True if pin exists on this board.
+// True if pin exists on this board and is free for application use (not the
+// console, flash or PSRAM pins).
 bool hal_gpio_valid(int pin);
 
 // Sets the pin's direction and pull. Returns HAL_OK or HAL_ERR_PIN.
@@ -88,7 +89,7 @@ int hal_gpio_toggle(int pin);
 // Starts PWM on pin with duty in 0.0..1.0 (clamped), resolution 1/1000.
 // The frequency is fixed per target so that parity tests match: on the
 // Pico 2 W it is clk_sys / 4 / 1001, about 37.5 kHz at 150 MHz.
-// Returns HAL_OK or HAL_ERR_PIN.
+// Returns HAL_OK, HAL_ERR_PIN, or HAL_ERR_UNSUPPORTED if no PWM channel is free.
 int hal_pwm_set(int pin, float duty);
 
 // Stops PWM and leaves pin as an output driven low. Returns HAL_OK or HAL_ERR_PIN.

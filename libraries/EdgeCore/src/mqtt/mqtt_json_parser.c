@@ -1,6 +1,6 @@
 // mqtt_json_parser.c
 #include "mqtt_json_parser.h"
-#include "jsmn.h"
+#include "third_party/jsmn/jsmn.h"
 #include <ctype.h>
 #include <string.h>
 #include <stdbool.h>

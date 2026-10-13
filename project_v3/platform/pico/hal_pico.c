@@ -1,5 +1,5 @@
 // platform/pico/hal_pico.c
-// Pico 2 W backend for include/hal/hal.h (D1 task 11).
+// Pico 2 W backend for libraries/EdgeCore/src/hal/hal.h (D1 tasks 11-12).
 // Each function keeps the exact SDK call sequence the shared code used before
 // the HAL existed, so external behaviour is unchanged.
 #include "hal/hal.h"

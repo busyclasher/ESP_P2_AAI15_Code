@@ -64,7 +64,7 @@ Platform drivers sit beside the HAL rather than inside it: I2C (`hardware/i2c.h`
 
 Three ESP-IDF calls are documented exceptions, as the README requires. `esp_timer_get_time` is used because Arduino `micros()` is 32-bit and wraps after about 71 minutes, while the reference relies on 64-bit time. `esp_task_wdt` is used because Arduino offers no per-task watchdog. `esp_partition` is used because Arduino has no raw partition interface (section 11). Each stays below the boundary and is tested in its task.
 
-Source layout: Arduino IDE compiles only the sketch folder and its `src/` subtree, so the shared code moves to `esp32s3/src/core/`, and the Pico CMake build compiles the same files from there. Platform code goes in `esp32s3/src/platform/esp32s3/` and `project_v3/platform/pico/`. Task 12 confirms that both builds compile the identical core files.
+Source layout: the shared code, including the bus drivers, is the Arduino library [libraries/EdgeCore/](libraries/EdgeCore/), which the Pico CMake build also compiles, so both targets use the identical files with no copy (task 12). Pico platform code stays in `project_v3/`; the ESP32-S3 platform code is the library [libraries/EdgeS3/](libraries/EdgeS3/) (HAL backend and the FreeRTOS runtime), used by the firmware sketch `esp32s3_edge/` and the HAL test sketch `esp32s3_haltest/`. Task 9 keeps the `esp32s3/` bring-up sketch free of framework code. Build steps for both targets are in SETUP.md.
 
 ## 5. Hardware layout (waits on task 8)
 
