@@ -69,6 +69,10 @@ static int uart_init_cfg(const sensor_cfg_t *scfg, void **out_ctx) {
         free(c);
         return err;
     }
+    // Discard anything received while the pins were being set up (a stray
+    // byte here put every later read one byte out of step: D-05).
+    hal_delay_ms(2);
+    while (hal_uart_read_byte(c->port) >= 0) {}
 
     // Optional: send pre once on init (good for wakeups)
     if (c->pre_len) {
