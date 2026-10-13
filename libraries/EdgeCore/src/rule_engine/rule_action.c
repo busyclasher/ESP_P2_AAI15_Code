@@ -108,10 +108,18 @@ static void substitute_vars(const rule_t *R,
 
 
 
+static void fire_action_text(const rule_t *R, const char *a, double value, uint32_t ts_ms);
+
 // Public dispatcher called from rules.c
 void fire_action(const rule_t *R, double value, uint32_t ts_ms) {
     if (!R) return;
-    const char *a = R->action;
+    fire_action_text(R, R->action, value, ts_ms);
+}
+
+// Runs one action string for rule R. Batch and chained actions pass their
+// sub-action here instead of copying R: rule_t is about 17 KB, and the copy
+// overflowed the stack (2 KB main stack on the Pico).
+static void fire_action_text(const rule_t *R, const char *a, double value, uint32_t ts_ms) {
     if (!a || !*a) return;
 
     uint64_t t_start = hal_time_us();
@@ -131,19 +139,15 @@ void fire_action(const rule_t *R, double value, uint32_t ts_ms) {
             /* Trim leading spaces */
             while (*token == ' ' || *token == '\t') token++;
             
-            /* Build temporary rule to fire action recursively */
+            /* Fire each sub-action for the same rule */
             if (*token) {
-                rule_t sub_rule = *R;
-                strncpy(sub_rule.action, token, sizeof(sub_rule.action) - 1);
-                sub_rule.action[sizeof(sub_rule.action) - 1] = '\0';
-                
                 /* Trim trailing spaces */
-                size_t len = strlen(sub_rule.action);
-                while (len > 0 && (sub_rule.action[len-1] == ' ' || sub_rule.action[len-1] == '\t')) {
-                    sub_rule.action[--len] = '\0';
+                size_t len = strlen(token);
+                while (len > 0 && (token[len-1] == ' ' || token[len-1] == '\t')) {
+                    token[--len] = '\0';
                 }
-                
-                fire_action(&sub_rule, value, ts_ms);
+
+                fire_action_text(R, token, value, ts_ms);
             }
             token = strtok_r(NULL, "|", &saveptr);
         }
@@ -417,11 +421,8 @@ if (!strncmp(a, "log:", 4)) {
                 chain = a + 10;
             }
             if (chain && *chain) {
-                /* Build a temporary rule_t with the chain action */
-                rule_t chain_rule = *R;
-                strncpy(chain_rule.action, chain, sizeof(chain_rule.action) - 1);
-                chain_rule.action[sizeof(chain_rule.action) - 1] = '\0';
-                fire_action(&chain_rule, (double)loss, ts_ms);
+                /* Fire the chained action for the same rule */
+                fire_action_text(R, chain, (double)loss, ts_ms);
             } else {
                 printf("[RULE] %s: ANOMALY DETECTED MSE=%.4f\n", R->name, loss);
                 mqtt_pub_event(R->name, "anomaly", (double)loss, "ANOMALY", ts_ms);
