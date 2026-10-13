@@ -116,6 +116,8 @@ git submodule update --init
 
 `s3-port` is the D1 branch. It starts from the supplied `Pico_Sample` code and adds the TFLite Micro submodule reference that was missing from it, plus this document. `git submodule update --init` downloads that library; if you skip it, the build fails with the missing-library error described in section 10.
 
+For D2 SPI development, start from that baseline and use `git checkout s3-port-d2`. The D2 branch does not claim SPI support until [D2_SPI_TODO.md](D2_SPI_TODO.md) is complete; its proposed SPI schema and pin assignments are planning inputs, not proof that hardware has been validated.
+
 ## 7. Create your WiFi and MQTT credentials file
 
 ```
@@ -367,6 +369,10 @@ Record these from the actual board markings, its matching pinout and a physical 
 The read-only probe was `esptool.exe --chip esp32s3 --port COM6 flash-id`; it did not upload or erase firmware. The exact USB and upload settings depend on the board's wiring and Arduino-ESP32 core version. Follow the matching board documentation and verify the result on hardware; do not assume that every ESP32-S3 Super Mini exposes the same console path. Espressif's [USB CDC guide](https://docs.espressif.com/projects/arduino-esp32/en/latest/tutorials/cdc_dfu_flash.html) explains the relevant Arduino menu options.
 
 The Arduino IDE **Tools** menu shown after the successful local upload/monitor run also had these values: Flash Mode `QIO 80MHz`; Partition Scheme `Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)`; Upload Speed `921600`; CPU Frequency `240MHz (WiFi)`; Events Run On `Core 1`; Arduino Runs On `Core 1`. USB DFU On Boot, USB Firmware MSC On Boot, JTAG Adapter, and Erase All Flash Before Sketch Upload were `Disabled`; Core Debug Level was `None`. Record any further menu options if the board profile exposes them.
+
+### D2 SPI planning note
+
+D2 proposes SPI2 with SCLK GPIO12, MOSI GPIO11, MISO GPIO13, and CS GPIO10 for the first loopback/readable-device proof. These pins remain provisional until Task 8 closes the integration layout against the exact board/module and all other devices. GPIO13 must not simultaneously serve the planned HC-SR04 Echo input. Keep GPIO19/20 for native USB, keep boot/strapping pins available, and do not use flash/PSRAM-connected pins. Follow [D2_SPI_TODO.md](D2_SPI_TODO.md) for the validation, wiring, fault, benchmark, and evidence gates before treating this mapping as approved.
 
 ### Compile, upload and monitor the minimal sketch (Task 9)
 
