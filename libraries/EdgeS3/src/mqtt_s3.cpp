@@ -24,6 +24,9 @@
 #include <EdgeCore.h>
 #include "mqtt/mqtt_telemetry.h"
 #include "mqtt/sensor_bridge.h"
+extern "C" {
+#include "mqtt/mqtt_model_transfer.h"
+}
 #include "runtime_s3.h"
 
 static char s_ssid[33], s_pass[65], s_host[64];
@@ -186,8 +189,14 @@ static void route_message(MQTTClient *client, char topic[], char bytes[], int le
         if (!strcmp(rest, "config"))      msg.kind = SCHED_MQTT_CONFIG;
         else if (!strcmp(rest, "cmd"))    msg.kind = SCHED_MQTT_CMD;
         else if (!strcmp(rest, "in"))     msg.kind = SCHED_MQTT_NODE;
+        else if (!strcmp(rest, "model/params")) {
+            printf("[MQTT] Norm params on: %s (%d bytes)\n", topic, length);
+            msg.kind = SCHED_MODEL_PARAMS;   // inference state belongs to SchedulerTask
+        }
         else if (!strncmp(rest, "model/", 6)) {
-            printf("[MQTT] Model data on: %s (%d bytes); model transfer is task 20\n", topic, length);
+            // binary chunks go straight to the transfer code, as on the Pico
+            printf("[MQTT] Model data on: %s (%d bytes)\n", topic, length);
+            model_transfer_on_data(topic, (const uint8_t *)bytes, (size_t)length);
             return;
         }
         // own status, sensor, presence and heartbeat echoes are dropped
@@ -206,6 +215,7 @@ static void route_message(MQTTClient *client, char topic[], char bytes[], int le
     snprintf(msg.topic, sizeof msg.topic, "%s", topic);
     memcpy(msg.text, bytes, length);
     msg.text[length] = 0;
+    msg.len = (uint16_t)length;
     if (xQueueSend(sched_q, &msg, 0) != pdTRUE)
         printf("[MQTT] inbound queue full, dropped message on %s\n", topic);
 }

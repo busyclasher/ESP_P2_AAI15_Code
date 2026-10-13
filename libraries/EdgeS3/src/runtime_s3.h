@@ -26,10 +26,12 @@ typedef enum {
     SCHED_MQTT_CMD,            // payload from pico/<node>/cmd
     SCHED_MQTT_NODE,           // payload from pico/<node>/in
     SCHED_REMOTE_LINE,         // a followed node's sensor line; topic says which
+    SCHED_MODEL_PARAMS,        // pico/<node>/model/params (binary; len is set)
 } sched_kind_t;
 
 typedef struct {
     uint8_t kind;              // sched_kind_t
+    uint16_t len;              // payload length, for binary payloads
     char    topic[SCHED_TOPIC_MAX];
     char    text[SCHED_TEXT_MAX];
 } sched_msg_t;

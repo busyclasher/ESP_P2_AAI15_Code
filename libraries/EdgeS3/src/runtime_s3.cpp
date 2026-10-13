@@ -82,6 +82,9 @@ static void handle_sched_msg(sched_msg_t *m, bool *running, bool *cfg_ready) {
     case SCHED_MQTT_NODE:
         if (s_node_cb) s_node_cb("unknown", m->text);
         break;
+    case SCHED_MODEL_PARAMS:
+        inference_mgr_set_params((const uint8_t *)m->text, m->len);
+        break;
     case SCHED_REMOTE_LINE: {
         char node[32], src[32];
         if (parse_line_topic(m->topic, node, sizeof node, src, sizeof src))
