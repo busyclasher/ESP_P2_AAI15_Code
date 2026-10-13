@@ -58,7 +58,7 @@ add_executable(project_v3
     ${EDGECORE}/bus/bus_if.c
     project_v3/bus/i2c.c
     project_v3/bus/uart.c
-    project_v3/bus/gpio.c
+    ${EDGECORE}/bus/gpio.c
 
     ${EDGECORE}/rule_engine/rules.c
     ${EDGECORE}/rule_engine/rule_expr.c

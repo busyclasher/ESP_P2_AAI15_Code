@@ -109,7 +109,8 @@ static void run_selftest(void) {
     int slot = scheduler_add_config(&cfg);
     scheduler_run_all(false);
     snprintf(d, sizeof d, "scheduler_add_config=%d", slot);
-    check("unported-gpio-driver-refuses", slot < 0, d);
+    check("gpio-driver-accepts-config", slot >= 0, d);
+    scheduler_reset();
 
     bool mq = control_mqtt_start("127.0.0.1", 1883, "s3-node", "s3-node");
     check("unported-mqtt-reports-offline", !mq, mq ? "started" : "mqtt_init=false");
