@@ -39,7 +39,13 @@ typedef struct {
 #define PUB_TOPIC_MAX   160
 #define PUB_PAYLOAD_MAX 512
 
+typedef enum {
+    PUB_PUBLISH = 0,
+    PUB_SUBSCRIBE,             // topic only; MQTTTask owns the client, so others ask
+} pub_op_t;
+
 typedef struct {
+    uint8_t  op;               // pub_op_t
     char     topic[PUB_TOPIC_MAX];
     char     payload[PUB_PAYLOAD_MAX];
     uint16_t len;
@@ -64,6 +70,11 @@ extern QueueHandle_t infer_q;
 extern QueueHandle_t app_q;
 extern QueueHandle_t bench_q;
 extern EventGroupHandle_t net_events;
+
+// Wi-Fi and broker settings for MQTTTask (task 19). Call before
+// runtime_start(); without it the node runs offline.
+void runtime_set_network(const char *ssid, const char *pass, const char *mqtt_host,
+                         uint16_t mqtt_port, const char *node_id);
 
 // Creates the queues and tasks. Call once from setup(), after
 // platform_console_begin().

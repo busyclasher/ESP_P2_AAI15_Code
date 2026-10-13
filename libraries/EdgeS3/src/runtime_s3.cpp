@@ -3,7 +3,7 @@
 // queues follow the Week 6 design review (section 3):
 //
 //   SchedulerTask   p4 core 1  owns configuration, sensors, rules; sched_q
-//   MQTTTask        p3 core 0  Wi-Fi and MQTT (task 19); pub_q
+//   MQTTTask        p3 core 0  Wi-Fi and MQTT (mqtt_s3.cpp); pub_q
 //   ControlTask     p2 core 1  USB console lines to sched_q
 //   InferenceTask   p2 core 1  model storage and inference (task 20); infer_q
 //   ApplicationTask p2 core 1  application logic (D6); app_q
@@ -22,6 +22,13 @@
 #include "runtime_s3.h"
 
 extern "C" void control_bind_flags(bool *running, bool *cfg_ready);
+extern "C" bool control_mqtt_start(const char *broker, uint16_t port, const char *client_id, const char *node_id);
+extern "C" void mqtt_task_body(void);
+extern "C" void mqtt_wifi_scan(void);
+extern "C" void mqtt_wifi_drop(void);
+extern "C" const char *runtime_node_id(void);
+extern "C" const char *runtime_broker_host(void);
+extern "C" uint16_t runtime_broker_port(void);
 
 QueueHandle_t sched_q;
 QueueHandle_t pub_q;
@@ -100,6 +107,10 @@ static void scheduler_task(void *arg) {
     inference_mgr_init();
     inference_mgr_load_base_model();
 
+    // Same start-up as the Pico's main.c; MQTTTask connects once Wi-Fi is up.
+    if (runtime_broker_host()[0])
+        control_mqtt_start(runtime_broker_host(), runtime_broker_port(), runtime_node_id(), runtime_node_id());
+
     esp_task_wdt_add(NULL);
     for (;;) {
         uint32_t wait_ms = scheduler_next_due_ms(running, 1000);
@@ -126,8 +137,12 @@ static void control_task(void *arg) {
         esp_task_wdt_reset();
         if (ch < 0 || !repl_line_feed(ch, line, sizeof line, &len)) continue;
 
-        if (strcasecmp(line, "TASKS") == 0) {   // platform command, not part of the REPL
+        if (strcasecmp(line, "TASKS") == 0) {   // platform commands, not part of the REPL
             runtime_print_tasks();
+        } else if (strcasecmp(line, "WIFISCAN") == 0) {
+            mqtt_wifi_scan();
+        } else if (strcasecmp(line, "WIFIDROP") == 0) {
+            mqtt_wifi_drop();
         } else {
             msg.kind = SCHED_CONSOLE_LINE;
             msg.topic[0] = 0;
@@ -139,16 +154,11 @@ static void control_task(void *arg) {
     }
 }
 
-// ---------- MQTTTask (task 19 replaces the body) ----------
+// ---------- MQTTTask (body in mqtt_s3.cpp) ----------
 
 static void mqtt_task(void *arg) {
     (void)arg;
-    static pub_msg_t msg;
-    for (;;) {
-        // Not ported yet: published messages are dropped, as on the Pico
-        // while the broker is unreachable.
-        xQueueReceive(pub_q, &msg, pdMS_TO_TICKS(1000));
-    }
+    mqtt_task_body();
 }
 
 // ---------- InferenceTask (task 20 replaces the body) ----------
@@ -215,8 +225,8 @@ extern "C" void runtime_print_tasks(void) {
     for (const auto &t : k_tasks) {
         if (*t.h) printf("[TASK] %-16s stack_free=%u B\n", t.name, (unsigned)uxTaskGetStackHighWaterMark(*t.h));
     }
-    printf("[TASK] heap_free=%u B min_free=%u B\n",
-           (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
+    printf("[TASK] heap_free=%u B min_free=%u B psram_free=%u B\n",
+           (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned)ESP.getFreePsram());
 }
 
 extern "C" void runtime_monitor_tick(void) {

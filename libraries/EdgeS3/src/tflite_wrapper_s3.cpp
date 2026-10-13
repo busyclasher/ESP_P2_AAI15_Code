@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include "esp_heap_caps.h"
 
 // TFLite Micro headers from the installed Arduino-ESP32 core.
 #include "tensorflow/lite/micro/micro_interpreter.h"
@@ -23,7 +24,14 @@
 static constexpr int kOpCount = 30;
 
 // Tensor arena — allocated in BSS (RAM).  Tune TFLITE_ARENA_SIZE in header.
-alignas(16) static uint8_t s_arena[TFLITE_ARENA_SIZE];
+// Allocated from PSRAM on first use: a 64 KB BSS arena left Wi-Fi too little
+// internal RAM to start (wifi_init 0x3001).
+static uint8_t *s_arena = nullptr;
+static bool arena_alloc() {
+    if (!s_arena) s_arena = (uint8_t *)heap_caps_aligned_alloc(16, TFLITE_ARENA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_arena) s_arena = (uint8_t *)heap_caps_aligned_alloc(16, TFLITE_ARENA_SIZE, MALLOC_CAP_8BIT);
+    return s_arena != nullptr;
+}
 
 // Pointers managed by load/unload
 static const tflite::Model*                                  s_model       = nullptr;
@@ -142,6 +150,10 @@ tflite_err_t tflite_load_model(const uint8_t *model_data, uint32_t model_size) {
     printf("[TFLITE] Schema version %lu verified.\n", (unsigned long)s_model->version());
 
     // Construct the op resolver in pre-allocated memory
+    if (!arena_alloc()) {
+        printf("[TFLITE] arena alloc failed\n");
+        return TFLITE_ERR_ALLOC;
+    }
     printf("[TFLITE] Creating OpResolver...\n");
     s_resolver = new (s_resolver_buf)
         tflite::MicroMutableOpResolver<kOpCount>();
@@ -321,7 +333,7 @@ void tflite_unload_model(void) {
 
     /* We must also zero the arena to prevent the new interpreter from using
      * stale metadata or dimension pointers from the previous model. */
-    memset(s_arena, 0, sizeof(s_arena));
+    if (s_arena) memset(s_arena, 0, TFLITE_ARENA_SIZE);
 
     s_model  = nullptr;
     s_loaded = false;
