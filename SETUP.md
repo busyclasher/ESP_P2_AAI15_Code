@@ -391,7 +391,7 @@ Shared Configurable Edge code
    Pico SDK   Arduino-ESP32
 ```
 
-Configuration parsing, the common sensor representation, scheduler, rule engine, output formatting, MQTT payload handling and application/ML logic should not call Arduino or Pico SDK functions directly. Platform operations belong in the HAL or platform drivers. If partitions, PSRAM access, a compatible TFLite Micro integration or measured performance require underlying ESP-IDF APIs from Arduino, document each exception and keep it below the shared-code boundary. The MQTT and ML library choices are still open and must be compatibility-tested and version-pinned before implementation.
+Configuration parsing, the common sensor representation, scheduler, rule engine, output formatting, MQTT payload handling and application/ML logic should not call Arduino or Pico SDK functions directly. Platform operations belong in the HAL or platform drivers. If partitions, PSRAM access, a compatible TFLite Micro integration or measured performance require underlying ESP-IDF APIs from Arduino, document each exception and keep it below the shared-code boundary. The MQTT library remains to be selected. For Task 20, Arduino-ESP32 3.3.12 bundles Espressif TFLite Micro 1.4.0; the S3 bridge links and runs the built-in model on the board. Other models and persistent upload still need verification. See the [Task 20 hardware check](parity/task20/README.md).
 
 ## Shared EdgeCore library and ESP32-S3 framework build (Tasks 12–13)
 

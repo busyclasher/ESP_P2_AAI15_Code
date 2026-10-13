@@ -6,14 +6,12 @@
 //   MQTT (task 19)             publishing returns false, as on the Pico while
 //                              the broker is unreachable; mqtt_init() returns false
 //   model transfer (task 20)   no uploaded model: MODEL_IDLE, size 0, NULL
-//   TFLite Micro (task 20)     load and invoke return TFLITE_ERR_NOT_LOADED
 //
 // Each task deletes its part of this file when it adds the real driver.
 #include <stdio.h>
 
 #include "mqtt/mqtt_telemetry.h"
 #include "mqtt/mqtt_model_transfer.h"
-#include "inference_engine/tflite_wrapper.h"
 
 // ---------- MQTT ----------
 
@@ -68,22 +66,3 @@ void model_transfer_poll(void) {}
 model_status_t model_transfer_status(void) { return MODEL_IDLE; }
 uint32_t model_transfer_model_size(void) { return 0; }
 const uint8_t *model_transfer_get_model_ptr(void) { return NULL; }
-
-// ---------- TFLite Micro ----------
-
-static const tflite_model_info_t s_no_model;
-
-tflite_err_t tflite_load_model(const uint8_t *model_data, uint32_t model_size) {
-    (void)model_data; (void)model_size;
-    printf("[S3] TFLite Micro not ported yet\n");
-    return TFLITE_ERR_NOT_LOADED;
-}
-
-tflite_err_t tflite_invoke(const float *inputs, float *outputs) {
-    (void)inputs; (void)outputs;
-    return TFLITE_ERR_NOT_LOADED;
-}
-
-const tflite_model_info_t *tflite_get_info(void) { return &s_no_model; }
-void tflite_unload_model(void) {}
-bool tflite_is_ready(void) { return false; }
