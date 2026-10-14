@@ -6,7 +6,7 @@ Branch `s3-port`. This is the Pico 2 W edge firmware (configpico2wedge / FlexiEd
 
 **Why it is the same firmware.** All platform-independent code (config parser, scheduler, REPL, rule engine, GPIO/I2C/UART drivers, MQTT payload handling, inference manager) is one library, [`libraries/EdgeCore/`](libraries/EdgeCore/), compiled unchanged by the Pico build and the S3 build; `tools/check_hal_boundary.sh` proves it uses no Pico or Arduino calls. Only the HAL ([Pico](project_v3/platform/pico/hal_pico.c), [S3](libraries/EdgeS3/src/hal_esp32s3.cpp)) and the platform services differ. The same test scripts run against both boards with the same expected output; only pin numbers are mapped.
 
-**Run it yourself** (macOS or Linux, board on USB; details in [Running D1 on the ESP32-S3](#running-d1-on-the-esp32-s3)):
+**Run it yourself** (macOS or Linux, board on USB; full steps in [Set up and test D1 from scratch](#set-up-and-test-d1-from-scratch-mac-and-windows)):
 
 | Step | Command | You should see |
 |---|---|---|
@@ -80,69 +80,115 @@ Every completed task must identify the tested commit, hardware revision, tool ve
 | 22 | Close portability and design-review documentation | List every Pico-specific dependency and its HAL or Arduino replacement, every necessary underlying ESP-IDF exception, and all timing, concurrency, memory, SDK, hardware, and unsupported-feature differences. Update the architecture, statecharts, assumptions, ownership, and traceability to match the implementation. Complete the AI-supported final gap check with team responses, actions, and evidence, and perform the design-consistency review. | Every rewritten or platform-specific file is covered; each underlying ESP-IDF exception is justified and tested; assumptions are validated or accepted with reasons; all requirements trace to evidence; and no stale names, pins, tasks, interfaces, or unresolved AI-review gaps remain. | Done | Hasif. [PORTABILITY.md](PORTABILITY.md) |
 | 23 | Release from a clean Arduino environment | Review and merge `s3-port` into `main`, create the release tag, clone recursively into a new directory, install the pinned Arduino IDE, Arduino-ESP32 core, board settings, and libraries, then follow `SETUP.md` without undocumented steps to compile, upload, monitor, and rerun the release smoke and critical parity tests. Package the final design-review artefacts and link the repository. | The fresh environment builds and runs on the target board and reproduces the parity checks; the tag, submodules, Arduino configuration, documentation, evidence, and repository link are available to the whole team. | Pending | Team confirmed; merge to `main` on hold. Steps: [SETUP.md](SETUP.md#release-task-23) |
 
-## Running D1 on the ESP32-S3
+## Set up and test D1 from scratch (Mac and Windows)
 
-Everything runs from a terminal on macOS or Linux; the Arduino IDE is optional. Full version and board details are in [SETUP.md](SETUP.md), and test results in [parity/PARITY.md §3](parity/PARITY.md#3-esp32-s3-results-tasks-13-to-21).
+Follow these steps in order on any laptop. Each step says what you should see.
 
-### 1. What you need
+### What D1 is
 
-An ESP32-S3 board (tested on the HW-747 Super Mini: 4 MB flash, 2 MB PSRAM) on a USB-C data cable, [arduino-cli](https://arduino.github.io/arduino-cli/) 1.5.1, Python 3, and for MQTT a broker on your laptop (`brew install mosquitto`). The S3 only joins **2.4 GHz WPA2** Wi-Fi. On an iPhone hotspot, turn on *Maximize Compatibility* and keep the Personal Hotspot screen open while the board connects.
+Our edge firmware (configpico2wedge) ran on the Raspberry Pi Pico 2 W. D1 ports it to the ESP32-S3. You send the board text lines such as `BEGINCFG|...|ENDCFG`; it reads sensors, runs rules and an ML model, and sends data over Wi-Fi/MQTT. Both boards compile the same shared code, and the tests below prove the S3 behaves like the Pico.
 
-### 2. One-time setup
+### Part A: Install (once, about 15 minutes)
 
-```sh
-git clone --recursive git@github.com:junyonggoh2004/EMBSYS-P2-AAI15.git
-cd EMBSYS-P2-AAI15 && git checkout s3-port
-sh tools/s3.sh setup        # ESP32 core 3.3.12, MQTT library 2.5.3, Python env
-```
+**Step 1. Install the tools.**
 
-Edit `esp32s3_edge/wifi_credentials.h` (created by setup; never commit it): `WIFI_SSID`, `WIFI_PASS`, `MQTT_HOST` (your laptop's IP on that network, e.g. `ipconfig getifaddr en0`), `NODE_ID` (default `s3-001`). Leave `WIFI_SSID` empty to run offline.
-
-### 3. Build, flash, use
-
-```sh
-sh tools/s3.sh flash        # build and upload (board options are set in the script)
-sh tools/s3.sh monitor      # console at 115200; Ctrl-C to leave
-```
-
-The script uses the *Huge APP* partition and *QSPI PSRAM*; the firmware does not fit or start Wi-Fi without them. If an upload fails with "serial TX path seems to be down", try a different cable or port, or hold BOOT while plugging in. Console commands: `HELP`, `SHOW`, `RUN`, `STOP`, `CLEAR`, `SHOWRULES`, `CLEARRULES`, `TASKS` (stack and heap), `WIFISCAN`, `WIFIDROP`. A sensor is one `BEGINCFG|...|ENDCFG` line and a rule one `BEGINRULE|...|ENDRULE` line; type them at the console or publish them to `pico/<node>/config`.
-
-```
-BEGINCFG|name=BTN|proto=gpio|gpio.mode=digital|gpio.pin=6|gpio.pull=down|mode=poll|freq_hz=2|ENDCFG
-BEGINRULE|name=R1|source=BTN|calc=s=u8(0)|when=s==1|action=log:pressed|ENDRULE
-RUN
-```
-
-### 4. Connecting sensors
-
-Use S3 GPIO numbers in configs. Usable pins are 1–18, 21 and 33–48 (only some are broken out on the Super Mini); avoid the strapping pins 0, 3, 45 and 46. Pins 19–20 (USB console), 22–25 (absent) and 26–32 (flash and PSRAM) are refused. All S3 pins are 3.3 V only. The tests map the Pico's pins to the S3 as GP16→1, GP17→2, GP18→7, GP20→4, GP21→5, GP22→6, GP25→8.
-
-| Sensor | Wiring to the S3 | Config (between `BEGINCFG\|` and `\|ENDCFG`) |
-|---|---|---|
-| Button, IR, PIR (digital) | Signal → GPIO6, GND → GND, VCC → 3V3 | `name=BTN\|proto=gpio\|gpio.mode=digital\|gpio.pin=6\|gpio.pull=down\|mode=poll\|freq_hz=2` |
-| Pulse counter | Signal → GPIO6 | as above with `gpio.mode=counter` (edges counted by interrupt) |
-| HC-SR04 distance | VCC → 5V, GND → GND, Trig → GPIO4, Echo → 1:2 divider → GPIO7 (Echo–R–GPIO7–2R–GND, e.g. 50 kΩ and 2 × 50 kΩ) | `name=SON\|proto=gpio\|gpio.mode=pulse\|gpio.trig=4\|gpio.echo=7\|gpio.pull=down\|gpio.pulse_timeout_us=25000\|mode=poll\|freq_hz=2` |
-| GY-511 accelerometer + magnetometer (I2C) | VIN → 3V3, GND → GND, SDA → GPIO1, SCL → GPIO2 (other pins empty). Remove the 1↔2 UART jumper first | `name=MAGID\|proto=i2c\|mode=poll\|freq_hz=1\|i2c.sda=1\|i2c.scl=2\|i2c.addr=0x1E\|i2c.reg=0x0A\|i2c.reg_size=1\|i2c.read_len=3\|i2c.restart=1` (reads `48 34 33`); test: `sh tools/s3.sh test 4c-mag` |
-| TSL2561 light (I2C) | VIN → 3V3, GND → GND, SDA → GPIO1, SCL → GPIO2, ADDR → GND (0x29). Remove the 1↔2 UART jumper first | `name=LUX\|proto=i2c\|mode=poll\|freq_hz=1\|i2c.sda=1\|i2c.scl=2\|i2c.addr=0x29\|i2c.pre=0x80 0x03 0x81 0x02\|i2c.reg=0x8C\|i2c.reg_size=1\|i2c.read_len=4\|i2c.restart=1` |
-| UART sensor or radar | Sensor TX → GPIO2, sensor RX → GPIO1, GND → GND | `name=RAD\|proto=uart\|uart.tx=1\|uart.rx=2\|uart.baud=115200\|uart.read_len=8\|mode=poll\|freq_hz=2` |
-
-Data appears on the console as `proto=... src=<name> len=<n> ts=<ms> : <hex bytes>` and on MQTT at `pico/<node>/sensor/<name>/line`.
-
-### 5. Testing
-
-The parity tests need two jumper wires on the S3: **GPIO1 ↔ GPIO2** (UART loopback) and **GPIO5 ↔ GPIO6** (GPIO loopback). Reset the board before `t10`. MQTT tests need Mosquitto running (`mosquitto -c <conf>` with `listener 1883` and `allow_anonymous true`) and the S3 on the same network as the laptop.
-
-| Command | Checks |
+| Mac (Terminal: Cmd+Space, "Terminal") | Windows (PowerShell: Start, "PowerShell") |
 |---|---|
-| `sh tools/s3.sh haltest` | HAL: timing, GPIO, PWM duty, pulse, 20,000-edge counter |
-| `sh tools/s3.sh test 4a` (also `4b`, `4c-uart`, `5-neg`, `t02`, `t03`, `t04`, `t06`, `t08`, `t09`, `t10`) | Console, GPIO, UART, rules and invalid input, against the Pico results |
-| `sh tools/s3.sh test 4c-mag` (also `4c-i2c`, `4c-sonic`) | GY-511 (TSL2561, HC-SR04), wired as above |
-| `sh tools/s3.sh mqtt <laptop-ip>` | 27-step MQTT, bridging and model upload |
-| `sh tools/s3.sh model <laptop-ip>` | Model upload, corrupt/oversized/interrupted uploads, reboot persistence |
-| `sh tools/s3.sh faults <laptop-ip>` / `flood <laptop-ip>` | Malformed and oversized input, Wi-Fi and broker loss / queue saturation |
-| `sh tools/s3.sh timing` / `endurance <laptop-ip>` | NFR1 sample period / NFR6 30-minute run |
+| `xcode-select --install` | `winget install Git.Git` |
+| Homebrew (skip if `brew -v` works): `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` | `winget install GitHub.cli` |
+| `brew install arduino-cli mosquitto gh` | `winget install Python.Python.3.12` |
+| | `winget install ArduinoSA.CLI` |
+| | `winget install EclipseFoundation.Mosquitto` |
+| | Close PowerShell. From now on use **Git Bash** (Start, "Git Bash") |
 
-Each prints PASS/FAIL per step and writes a raw log under `parity/logs/`. To upload your own model: `cd project_v3/models && python3 send_model.py --broker <laptop-ip> --node s3-001 --model <file>.tflite --norm <norm>.json --threshold <thresh>.json`.
+From Step 2 on, the commands are the same on both (Mac Terminal or Windows Git Bash).
+
+**Step 2. Download the project.**
+```sh
+gh auth login          # GitHub.com, HTTPS, log in with the browser
+cd ~ && gh repo clone junyonggoh2004/EMBSYS-P2-AAI15
+cd ~/EMBSYS-P2-AAI15 && git checkout s3-port
+```
+Already have it? `cd` into it and run `git pull`.
+
+**Step 3. Install the board support, MQTT library and test tools.**
+```sh
+sh tools/s3.sh setup
+```
+You should see: `Done. Edit esp32s3_edge/wifi_credentials.h ...`
+
+**Step 4. Check the laptop.**
+```sh
+sh tools/s3.sh check
+```
+You should see: `esp32 core: 3.3.12`, `MQTT lib: 2.5.3` and `Global variables use 21592 bytes`.
+
+### Part B: Wi-Fi and broker
+
+**Step 5. Find the laptop's IP.** Mac: `ipconfig getifaddr en0`. Windows: `ipconfig`, then **IPv4 Address** under "Wireless LAN adapter Wi-Fi".
+
+**Step 6. Give the board your Wi-Fi.** Mac: `open -e esp32s3_edge/wifi_credentials.h`. Windows: `notepad esp32s3_edge/wifi_credentials.h`. Set `WIFI_SSID` (2.4 GHz network only), `WIFI_PASS`, and `MQTT_HOST` (the IP from Step 5). Save. This file is never committed.
+
+**Step 7. Start the broker in a second window and leave it open.**
+
+| Mac (Cmd+N) | Windows (another Git Bash) |
+|---|---|
+| `printf "listener 1883 0.0.0.0\nallow_anonymous true\n" > ~/mosq.conf` | same |
+| `mosquitto -c ~/mosq.conf -v` | `"/c/Program Files/mosquitto/mosquitto.exe" -c ~/mosq.conf -v` |
+
+Click **Allow** if asked about incoming connections. "Address already in use" means a broker is already running: Mac `pkill mosquitto`; Windows `net stop mosquitto` in an Administrator PowerShell; then run it again.
+
+### Board pinout
+
+![ESP32-S3 Super Mini pinout](Pinout_Super_Mini_S3.png)
+
+Hold the board with USB-C at the top, chip facing you. Left pins, top to bottom: TX, RX, GP1–GP7. Right pins: 5V, GND, 3V3, GP13–GP8. All GPIO are 3.3 V only.
+
+### Part C: Wire and flash
+
+**Step 8. Two test wires on the S3:** **GP1 ↔ GP2** and **GP5 ↔ GP6**.
+
+**Step 9. Plug the S3 in** with a USB-C data cable. On Windows it appears as a COM port (Device Manager, Ports).
+
+**Step 10. Flash.**
+```sh
+sh tools/s3.sh flash
+```
+You should see: `Hash of data verified.` If it says "serial TX path seems to be down", use another cable and try again.
+
+**Step 11. Watch it live.**
+```sh
+sh tools/s3.sh monitor
+```
+Within about 20 s: `[WIFI] ip=...` and `[MQTT] Subscribed OK to: broadcast`, and the broker window shows a heartbeat from `s3-001` every 10 s. Type `HELP` and press Enter for the command list; **Ctrl+C** leaves. If you see `Guru Meditation Error ... Interrupt wdt timeout on CPU1` and then `Port closed`, that is the known start-up defect D-15 (mostly the first boot after flashing): the board restarts itself, so run the monitor again.
+
+### Part D: Tests (close the monitor first)
+
+| Step | Command | You should see | What it does | Why it matters |
+|---|---|---|---|---|
+| 12 | `sh tools/s3.sh test 4a` | `14/14 passed` | HELP, SHOW, RUN, STOP, a sensor, rules and the AI model | Same commands and replies as the Pico |
+| 13 | `sh tools/s3.sh test 4b` | `25/25 passed` | Switches GP5 and reads it on GP6, counts pulses, PULSE and PWM | Digital in/out, counting and output actions work |
+| 14 | `sh tools/s3.sh test 4c-uart` | `8/8 passed` | Sends bytes out of GP1 and reads them on GP2 | Serial (UART) sensors can be read |
+| 15 | `sh tools/s3.sh test 5-neg` | `27/27 passed` | Wrong protocols, missing pins, broken rules, too many sensors | Bad input is refused, never crashes the board |
+| 16 | `sh tools/s3.sh test t02` / `t03` / `t04` / `t08` / `t09` | 7/7, 6/6, 13/13, 26/26, 5/5 | Inverted input; pin 99; 8 fast sensors; UART settings; UART non-stop | Settings work, impossible pins are refused, no data lost under load |
+| 17 | `sh tools/s3.sh test t06` | `6/7 passed` | Pulse and one-wire sensors with nothing connected | Missing sensors time out; the one fail is D-07, kept to match the Pico |
+| 18 | Unplug and replug USB, wait 10 s, then `sh tools/s3.sh test t10` | `7/7 passed` | One rule that should fire, one that must not | Rules act only when true (the replug clears GP5) |
+| 19 | `sh tools/s3.sh mqtt <your-ip>` | `27/27 passed` | Configs, commands, data and an AI model upload over Wi-Fi | The wireless side works like the Pico; bridging (broken on the Pico, D-10) works |
+| 20 | `sh tools/s3.sh model <your-ip>` | `9/9 passed` | Good, corrupt, too-big and cut-off model uploads, then a reboot | Bad uploads never break the AI; the good model survives power-off |
+| 21 | `sh tools/s3.sh faults <your-ip>` | every line `PASS` | Garbage and huge messages, a Wi-Fi drop | The node recovers by itself and keeps sampling offline |
+| 22 | `sh tools/s3.sh timing` | `PASS` rows (4 min) | Sample spacing for 6 sensors | On time within 5% (the Pico was stuck at 1 per second, D-06) |
+| 23 | `sh tools/s3.sh compare 4a` | Pico and S3 text | The Pico's and the S3's log of the same test | See that the output is identical |
+| 24 | `sh tools/s3.sh endurance <your-ip>` (optional) | `6/6 passed` (30 min) | Sensors, rules, AI and MQTT for 30 minutes | No crash, gaps or memory leak over time |
+
+### Part E: Real sensors (one at a time; no breadboard or resistor needed)
+
+**Step 25. GY-511 compass/accelerometer (I2C).** Unplug USB, remove the GP1↔GP2 wire, connect GY-511 **VIN → 3V3**, **GND → GND**, **SDA → GP1**, **SCL → GP2**, plug in, run `sh tools/s3.sh test 4c-mag`. You should see `15/15 passed`: the chip returns its factory ID `48 34 33` ("H43") and the accelerometer measures gravity.
+
+**Step 26. Real digital input (MH sensor board or the 3-pin IR board).** Unplug USB and the GY-511, connect sensor **VCC → 3V3**, **GND → GND**, **DO / OUT → GP1**, plug in, run `sh tools/s3.sh test 4d-ir`, and during the next 40 seconds trigger it 5–6 times (MH board: turn the blue knob until its LED flips; IR board: wave a hand). You should see all steps pass: the input reads both 0 and 1, the inverted copy flips the other way, and the counter counts.
+
+Only the HC-SR04 needs a resistor divider: it is a 5 V sensor and its Echo signal is too high for the S3 (see [SETUP.md](SETUP.md#pin-power-and-wiring-task-8)).
+
+If every step matched, this laptop has set up, built, flashed and verified D1 by itself.
 
 ## Completion rule
 
