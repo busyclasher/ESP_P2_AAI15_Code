@@ -2,11 +2,33 @@
 
 Branch `s3-port`. This is the Pico 2 W edge firmware (configpico2wedge / FlexiEdgePico `project_v3`) ported to the ESP32-S3 Super Mini with Arduino-ESP32. The same configuration lines, console commands, MQTT topics, output format and ML model work on both boards, because both builds compile the same shared code.
 
-## Start here
+
+## Contents
+
+| Section | What's in it |
+|---|---|
+| [1. Start here](#1-start-here) | What D1 is in one paragraph, the 7 commands to try, and every test result |
+| [2. D1 task checklist](#2-d1-task-checklist) | Tasks 1–23 with status and dev notes; [execution model](#execution-model) |
+| [3. Set up and test D1 from scratch](#3-set-up-and-test-d1-from-scratch-mac-and-windows) | Step-by-step for a new laptop (Mac and Windows) |
+| &nbsp;&nbsp;[Part A: Install](#part-a-install) | Steps 1–4: tools, project, board support, machine check |
+| &nbsp;&nbsp;[Part B: Wi-Fi and broker](#part-b-wi-fi-and-broker) | Steps 5–7: laptop IP, Wi-Fi file, MQTT broker |
+| &nbsp;&nbsp;[Board pinout](#board-pinout) | Super Mini pin diagram and how to hold the board |
+| &nbsp;&nbsp;[Part C: Wire and flash](#part-c-wire-and-flash) | Steps 8–11: test wires, flash, live console |
+| &nbsp;&nbsp;[Part D: Tests](#part-d-tests) | Steps 12–24: every automatic test, what it does and why |
+| &nbsp;&nbsp;[Part E: Real sensors](#part-e-real-sensors) | Steps 25–26: GY-511 and light/IR sensor; why no resistor |
+| [4. Using any sensor](#4-using-any-sensor-config-cheat-sheet) | Wiring and the config line for every sensor type, rules |
+| [5. Completion rule](#5-completion-rule) | When a task counts as done |
+
+Other documents: [SETUP.md](SETUP.md) (board and environment details), [parity/PARITY.md](parity/PARITY.md) (requirements and evidence), [PORTABILITY.md](PORTABILITY.md) (Pico to S3 changes and defects), [ARCHITECTURE.md](ARCHITECTURE.md) (task design), [project_v3/README.md](project_v3/README.md) (full config syntax).
+
+
+---
+
+# 1. Start here
 
 **Why it is the same firmware.** All platform-independent code (config parser, scheduler, REPL, rule engine, GPIO/I2C/UART drivers, MQTT payload handling, inference manager) is one library, [`libraries/EdgeCore/`](libraries/EdgeCore/), compiled unchanged by the Pico build and the S3 build; `tools/check_hal_boundary.sh` proves it uses no Pico or Arduino calls. Only the HAL ([Pico](project_v3/platform/pico/hal_pico.c), [S3](libraries/EdgeS3/src/hal_esp32s3.cpp)) and the platform services differ. The same test scripts run against both boards with the same expected output; only pin numbers are mapped.
 
-**Run it yourself** (macOS or Linux, board on USB; full steps in [Set up and test D1 from scratch](#set-up-and-test-d1-from-scratch-mac-and-windows)):
+**Run it yourself** (macOS or Linux, board on USB; full steps in [section 3](#3-set-up-and-test-d1-from-scratch-mac-and-windows)):
 
 | Step | Command | You should see |
 |---|---|---|
@@ -40,19 +62,10 @@ The Pico 2 W firmware builds with every shared-code change; re-running it on a P
 
 **Where things are.** Setup and board details: [SETUP.md](SETUP.md). Requirements and parity evidence: [parity/PARITY.md](parity/PARITY.md). Architecture (task 10): [ARCHITECTURE.md](ARCHITECTURE.md). Portability and design-review closure: [PORTABILITY.md](PORTABILITY.md). Config syntax and commands: [project_v3/README.md](project_v3/README.md).
 
-## Execution model
 
-- Tasks 1–3 establish the common baseline. Their implementation work is complete; any missing build log or artifact metadata must be backfilled before task 10.
-- After task 3, tasks 4–6 (Pico requirements and reference evidence) and tasks 7–9 (ESP32-S3 environment and board bring-up) run concurrently.
-- Task 10 is the architecture-freeze gate. It cannot be completed until both parallel tracks are finished.
-- Tasks 11–13 establish the portable HAL, shared build, and FreeRTOS runtime.
-- After task 13, the GPIO path (tasks 14–15), I2C (task 16), and UART (task 17) may be developed in parallel where file ownership does not overlap.
-- Tasks 18–20 integrate application services. Final model-transfer verification in task 20 depends on MQTT from task 19.
-- Tasks 21–23 are the verification, documentation, and release gates.
+---
 
-Every completed task must identify the tested commit, hardware revision, tool versions, tester, date, and retained evidence. Evidence may include console logs, broker captures, measurements, photographs, or test scripts.
-
-## Checklist
+# 2. D1 task checklist
 
 | # | Task | Required work | Acceptance evidence | Status | Dev notes |
 |---:|---|---|---|---|---|
@@ -80,15 +93,35 @@ Every completed task must identify the tested commit, hardware revision, tool ve
 | 22 | Close portability and design-review documentation | List every Pico-specific dependency and its HAL or Arduino replacement, every necessary underlying ESP-IDF exception, and all timing, concurrency, memory, SDK, hardware, and unsupported-feature differences. Update the architecture, statecharts, assumptions, ownership, and traceability to match the implementation. Complete the AI-supported final gap check with team responses, actions, and evidence, and perform the design-consistency review. | Every rewritten or platform-specific file is covered; each underlying ESP-IDF exception is justified and tested; assumptions are validated or accepted with reasons; all requirements trace to evidence; and no stale names, pins, tasks, interfaces, or unresolved AI-review gaps remain. | Done | Hasif. [PORTABILITY.md](PORTABILITY.md) |
 | 23 | Release from a clean Arduino environment | Review and merge `s3-port` into `main`, create the release tag, clone recursively into a new directory, install the pinned Arduino IDE, Arduino-ESP32 core, board settings, and libraries, then follow `SETUP.md` without undocumented steps to compile, upload, monitor, and rerun the release smoke and critical parity tests. Package the final design-review artefacts and link the repository. | The fresh environment builds and runs on the target board and reproduces the parity checks; the tag, submodules, Arduino configuration, documentation, evidence, and repository link are available to the whole team. | Pending | Team confirmed; merge to `main` on hold. Steps: [SETUP.md](SETUP.md#release-task-23) |
 
-## Set up and test D1 from scratch (Mac and Windows)
+## Execution model
+
+- Tasks 1–3 establish the common baseline. Their implementation work is complete; any missing build log or artifact metadata must be backfilled before task 10.
+- After task 3, tasks 4–6 (Pico requirements and reference evidence) and tasks 7–9 (ESP32-S3 environment and board bring-up) run concurrently.
+- Task 10 is the architecture-freeze gate. It cannot be completed until both parallel tracks are finished.
+- Tasks 11–13 establish the portable HAL, shared build, and FreeRTOS runtime.
+- After task 13, the GPIO path (tasks 14–15), I2C (task 16), and UART (task 17) may be developed in parallel where file ownership does not overlap.
+- Tasks 18–20 integrate application services. Final model-transfer verification in task 20 depends on MQTT from task 19.
+- Tasks 21–23 are the verification, documentation, and release gates.
+
+Every completed task must identify the tested commit, hardware revision, tool versions, tester, date, and retained evidence. Evidence may include console logs, broker captures, measurements, photographs, or test scripts.
+
+
+---
+
+# 3. Set up and test D1 from scratch (Mac and Windows)
 
 Follow these steps in order on any laptop. Each step says what you should see.
 
-### What D1 is
+## What D1 is
 
 Our edge firmware (configpico2wedge) ran on the Raspberry Pi Pico 2 W. D1 ports it to the ESP32-S3. You send the board text lines such as `BEGINCFG|...|ENDCFG`; it reads sensors, runs rules and an ML model, and sends data over Wi-Fi/MQTT. Both boards compile the same shared code, and the tests below prove the S3 behaves like the Pico.
 
-### Part A: Install (once, about 15 minutes)
+
+---
+
+## Part A: Install
+
+Once per laptop, about 15 minutes.
 
 **Step 1. Install the tools.**
 
@@ -123,7 +156,10 @@ sh tools/s3.sh check
 ```
 You should see: `esp32 core: 3.3.12`, `MQTT lib: 2.5.3` and `Global variables use 21592 bytes`.
 
-### Part B: Wi-Fi and broker
+
+---
+
+## Part B: Wi-Fi and broker
 
 **Step 5. Find the laptop's IP.** Mac: `ipconfig getifaddr en0`. Windows: `ipconfig`, then **IPv4 Address** under "Wireless LAN adapter Wi-Fi".
 
@@ -138,13 +174,19 @@ You should see: `esp32 core: 3.3.12`, `MQTT lib: 2.5.3` and `Global variables us
 
 The broker is the MQTT message hub: the S3 sends its sensor data and heartbeats to it, and the MQTT tests reach the S3 through it. Keep it open until you finish Part D (Steps 19–21 and 24 need it; the other tests run over USB), then close it with Ctrl+C. Click **Allow** if asked about incoming connections. "Address already in use" means a broker is already running: Mac `pkill mosquitto`; Windows `net stop mosquitto` in an Administrator PowerShell; then run it again.
 
-### Board pinout
+
+---
+
+## Board pinout
 
 ![ESP32-S3 Super Mini pinout](Pinout_Super_Mini_S3.png)
 
 Hold the board with USB-C at the top, chip facing you. Left pins, top to bottom: TX, RX, GP1–GP7. Right pins: 5V, GND, 3V3, GP13–GP8. All GPIO are 3.3 V only.
 
-### Part C: Wire and flash
+
+---
+
+## Part C: Wire and flash
 
 **Step 8. Two test wires on the S3:** **GP1 ↔ GP2** and **GP5 ↔ GP6**.
 
@@ -162,7 +204,12 @@ sh tools/s3.sh monitor
 ```
 Within about 20 s: `[WIFI] ip=...` and `[MQTT] Subscribed OK to: broadcast`, and the broker window shows a heartbeat from `s3-001` every 10 s. Type `HELP` and press Enter for the command list; **Ctrl+C** leaves. If you see `Guru Meditation Error ... Interrupt wdt timeout on CPU1` and then `Port closed`, that is the known start-up defect D-15 (mostly the first boot after flashing): the board restarts itself, so run the monitor again.
 
-### Part D: Tests (close the monitor first)
+
+---
+
+## Part D: Tests
+
+Close the monitor first (Ctrl+C): a test and the monitor cannot use the USB port at the same time.
 
 | Step | Command | You should see | What it does | Why it matters |
 |---|---|---|---|---|
@@ -180,11 +227,14 @@ Within about 20 s: `[WIFI] ip=...` and `[MQTT] Subscribed OK to: broadcast`, and
 | 23 | `sh tools/s3.sh compare 4a` | Pico and S3 text | The Pico's and the S3's log of the same test | See that the output is identical |
 | 24 | `sh tools/s3.sh endurance <your-ip>` (optional) | `6/6 passed` (30 min) | Sensors, rules, AI and MQTT for 30 minutes | No crash, gaps or memory leak over time |
 
-### Part E: Real sensors
+
+---
+
+## Part E: Real sensors
 
 Use one sensor at a time. No breadboard and no resistor are needed for these two (see "Why no resistor" below).
 
-#### Step 25. GY-511 compass and accelerometer (I2C)
+### Step 25. GY-511 compass and accelerometer (I2C)
 
 1. Unplug the USB cable.
 2. Remove the **GP1 ↔ GP2** test wire.
@@ -206,7 +256,7 @@ Use one sensor at a time. No breadboard and no resistor are needed for these two
 **You should see:** `15/15 passed`.
 **Why it proves the sensor is real:** the chip answers with its factory ID `48 34 33` ("H43"), which no wire can fake, and the accelerometer measures gravity (about 1 g).
 
-#### Step 26. Real digital input (MH light sensor or the 3-pin IR board)
+### Step 26. Real digital input (MH light sensor or the 3-pin IR board)
 
 1. Unplug the USB cable and remove the GY-511.
 2. Connect 3 wires (the MH board's 4th pin, **AO**, is an analog output and stays empty: D1 reads digital 0/1):
@@ -233,13 +283,16 @@ Use one sensor at a time. No breadboard and no resistor are needed for these two
 **You should see:** `7/7 passed`.
 **Why it proves the input works:** a real sensor drives the pin to both 0 and 1, the inverted copy reads the opposite, and the counter counts the changes.
 
-#### Why no resistor
+### Why no resistor
 
 An S3 pin can take at most 3.3 V. The GY-511, MH board and IR board are powered from the S3's **3V3** pin, so their signals can never be higher than 3.3 V, and the pull-up or pull-down a digital input needs is built into the chip (`gpio.pull=up` or `down`). The test wires join an S3 pin to another S3 pin, also 3.3 V. Only the **HC-SR04** needs a resistor divider: it is powered from **5V**, so its Echo signal is 5 V and must be divided down before it reaches an S3 pin (wiring in [SETUP.md](SETUP.md#pin-power-and-wiring-task-8)).
 
 If every step matched, this laptop has set up, built, flashed and verified D1 by itself.
 
-## Using any sensor (config cheat sheet)
+
+---
+
+# 4. Using any sensor (config cheat sheet)
 
 The node is not plug-and-play: each sensor needs **one config line** that tells it the protocol, the pins and how to read it. No code change and no re-flash: wire the sensor, send the line, type `RUN`.
 
@@ -269,6 +322,9 @@ BEGINRULE|name=DARK|source=LIGHT|calc=s=u8(0)|when=s==1|action=log:it is dark|EN
 ```
 `calc` picks the value out of the bytes (`u8(0)` = byte 0), `when` is the condition, and `action` can also switch a pin (`gpio:5=HIGH`), set PWM, publish over MQTT or run the AI model. Every option and action is listed in [project_v3/README.md](project_v3/README.md#%EF%B8%8F-configuration-guide); its examples use Pico pin numbers, so swap in S3 GP numbers.
 
-## Completion rule
+
+---
+
+# 5. Completion rule
 
 A task is not complete merely because code compiles or a single happy-path demonstration works. It is complete only when its acceptance evidence is recorded, relevant requirements and assumptions are updated, and any failure or limitation is either fixed or explicitly documented with an owner and disposition.
