@@ -1,5 +1,6 @@
 #!/bin/sh
-# ESP32-S3 from the terminal: no Arduino IDE needed. Run from the repo root.
+# ESP32-S3 from the terminal: no Arduino IDE needed. Run from the repo root
+# (macOS/Linux Terminal, or Git Bash on Windows).
 #
 #   sh tools/s3.sh setup             one-time: core, MQTT library, Python env
 #   sh tools/s3.sh check             task 7: check versions and compile the bring-up and full sketches
@@ -19,11 +20,14 @@
 # Wi-Fi details go in esp32s3_edge/wifi_credentials.h (copy the .example).
 set -e
 FQBN=esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=4M,PSRAM=enabled,PartitionScheme=huge_app
+# Python: the venv made by setup (bin/ on macOS and Linux, Scripts/ on Windows)
+if python3 -c "" 2>/dev/null; then SYSPY=python3; else SYSPY=python; fi
 PY=.venv/bin/python
-[ -x "$PY" ] || PY=python3
+[ -x "$PY" ] || PY=.venv/Scripts/python.exe
+[ -x "$PY" ] || PY=$SYSPY
 PORT=${PORT:-$($PY -c "from serial.tools import list_ports; print(next((p.device for p in list_ports.comports() if p.vid == 0x303A), ''))" 2>/dev/null)}
 
-need_port() { [ -n "$PORT" ] || { echo "No ESP32-S3 found on USB. Plug it in (or set PORT=/dev/cu.usbmodemXXXX)."; exit 1; }; }
+need_port() { [ -n "$PORT" ] || { echo "No ESP32-S3 found on USB. Plug it in (or set PORT=/dev/cu.usbmodemXXXX, or PORT=COM5 on Windows)."; exit 1; }; }
 build() { arduino-cli compile --fqbn "$FQBN" --libraries libraries "$1"; }
 upload() { need_port; arduino-cli upload --fqbn "$FQBN" --port "$PORT" "$1"; sleep 3; }
 
@@ -33,7 +37,9 @@ case "$1" in
     arduino-cli core update-index
     arduino-cli core install esp32:esp32@3.3.12
     arduino-cli lib install "MQTT@2.5.3"
-    python3 -m venv .venv && .venv/bin/pip install -q pyserial paho-mqtt
+    $SYSPY -m venv .venv
+    VPY=.venv/bin/python; [ -x "$VPY" ] || VPY=.venv/Scripts/python.exe
+    $VPY -m pip install -q pyserial paho-mqtt
     [ -f esp32s3_edge/wifi_credentials.h ] || cp esp32s3_edge/wifi_credentials.h.example esp32s3_edge/wifi_credentials.h
     echo "Done. Edit esp32s3_edge/wifi_credentials.h, then: sh tools/s3.sh flash" ;;
   check)   # Task 7: every machine must match these and compile both sketches.
@@ -66,5 +72,5 @@ case "$1" in
              endurance) $PY parity/endurance_test.py --broker "$2" --port "$PORT" ;;
            esac ;;
   timing)  need_port; $PY parity/timing_test.py --board s3 --port "$PORT" ;;
-  *)       sed -n '2,19p' "$0" ;;
+  *)       sed -n '2,20p' "$0" ;;
 esac
