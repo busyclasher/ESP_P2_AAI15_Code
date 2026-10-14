@@ -307,7 +307,9 @@ extern "C" void mqtt_task_body(void) {
     }
 
     WiFi.onEvent(on_wifi_event);
+    WiFi.persistent(false);       // credentials come from the sketch; no flash write on every connect
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);         // always-on node: no modem sleep (one boot in six froze CPU1 without this)
     WiFi.setAutoReconnect(true);
     printf("[WIFI] Connecting to %s\n", s_ssid);
     WiFi.begin(s_ssid, s_pass);
