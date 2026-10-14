@@ -206,10 +206,10 @@ Use one sensor at a time. No breadboard and no resistor are needed for these two
 **You should see:** `15/15 passed`.
 **Why it proves the sensor is real:** the chip answers with its factory ID `48 34 33` ("H43"), which no wire can fake, and the accelerometer measures gravity (about 1 g).
 
-#### Step 26. Real digital input (MH sensor board or the 3-pin IR board)
+#### Step 26. Real digital input (MH light sensor or the 3-pin IR board)
 
 1. Unplug the USB cable and remove the GY-511.
-2. Connect 3 wires:
+2. Connect 3 wires (the MH board's 4th pin, **AO**, is an analog output and stays empty: D1 reads digital 0/1):
 
    | Sensor pin | S3 pin | Where on the S3 |
    |---|---|---|
@@ -218,15 +218,19 @@ Use one sensor at a time. No breadboard and no resistor are needed for these two
    | DO (MH board) or OUT/S (IR board) | GP1 | left side, 3rd from the top |
 
 3. Plug the USB cable back in.
-4. Run:
+4. **See it live first** (in your main window; the broker window is not needed):
+   1. `sh tools/s3.sh monitor` and wait for `[MQTT] Subscribed OK to: broadcast`.
+   2. Paste `BEGINCFG|name=LIGHT|proto=gpio|gpio.mode=digital|gpio.pin=1|gpio.pull=up|mode=poll|freq_hz=2|ENDCFG` and press Enter. The board replies `CFG: ok (added #0: LIGHT)`.
+   3. Type `RUN`. Watch the lines `proto=gpio src=LIGHT len=3 ts=... : 00 ...`; the first number after the colon is the reading (`00` or `01`). Ignore the `[SCHED]` lines.
+   4. In normal light, slowly turn the blue knob until the sensor's right-hand LED just switches; the reading flips `00` ↔ `01` with it. Then cover it with your hand and shine a phone torch on it: the LED and the reading flip each time. (LED flips but the reading never does: the DO wire is not on GP1. LED never flips: check VCC and GND.)
+   5. Type `STOP`, then `CLEAR`, then Ctrl+C to close the monitor (a test cannot run while the monitor is open).
+5. Run the test:
    ```sh
    sh tools/s3.sh test 4d-ir
    ```
-5. For the next **40 seconds**, trigger the sensor 5–6 times:
-   - **MH board:** slowly turn the blue knob back and forth until its right-hand LED switches on and off.
-   - **IR board:** wave your hand over it.
+6. When `PASS  cfg-ircnt` appears, the screen goes quiet for **40 seconds**: in that time cover and uncover (or torch) the sensor 5–6 times. For the IR board, wave your hand over it.
 
-**You should see:** every step `PASS`.
+**You should see:** `7/7 passed`.
 **Why it proves the input works:** a real sensor drives the pin to both 0 and 1, the inverted copy reads the opposite, and the counter counts the changes.
 
 #### Why no resistor
