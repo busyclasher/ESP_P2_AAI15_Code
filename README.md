@@ -136,7 +136,7 @@ You should see: `esp32 core: 3.3.12`, `MQTT lib: 2.5.3` and `Global variables us
 | `printf "listener 1883 0.0.0.0\nallow_anonymous true\n" > ~/mosq.conf` | same |
 | `mosquitto -c ~/mosq.conf -v` | `"/c/Program Files/mosquitto/mosquitto.exe" -c ~/mosq.conf -v` |
 
-Click **Allow** if asked about incoming connections. "Address already in use" means a broker is already running: Mac `pkill mosquitto`; Windows `net stop mosquitto` in an Administrator PowerShell; then run it again.
+The broker is the MQTT message hub: the S3 sends its sensor data and heartbeats to it, and the MQTT tests reach the S3 through it. Keep it open until you finish Part D (Steps 19–21 and 24 need it; the other tests run over USB), then close it with Ctrl+C. Click **Allow** if asked about incoming connections. "Address already in use" means a broker is already running: Mac `pkill mosquitto`; Windows `net stop mosquitto` in an Administrator PowerShell; then run it again.
 
 ### Board pinout
 
@@ -180,13 +180,58 @@ Within about 20 s: `[WIFI] ip=...` and `[MQTT] Subscribed OK to: broadcast`, and
 | 23 | `sh tools/s3.sh compare 4a` | Pico and S3 text | The Pico's and the S3's log of the same test | See that the output is identical |
 | 24 | `sh tools/s3.sh endurance <your-ip>` (optional) | `6/6 passed` (30 min) | Sensors, rules, AI and MQTT for 30 minutes | No crash, gaps or memory leak over time |
 
-### Part E: Real sensors (one at a time; no breadboard or resistor needed)
+### Part E: Real sensors
 
-**Step 25. GY-511 compass/accelerometer (I2C).** Unplug USB, remove the GP1↔GP2 wire, connect GY-511 **VIN → 3V3**, **GND → GND**, **SDA → GP1**, **SCL → GP2**, plug in, run `sh tools/s3.sh test 4c-mag`. You should see `15/15 passed`: the chip returns its factory ID `48 34 33` ("H43") and the accelerometer measures gravity.
+Use one sensor at a time. No breadboard and no resistor are needed for these two (see "Why no resistor" below).
 
-**Step 26. Real digital input (MH sensor board or the 3-pin IR board).** Unplug USB and the GY-511, connect sensor **VCC → 3V3**, **GND → GND**, **DO / OUT → GP1**, plug in, run `sh tools/s3.sh test 4d-ir`, and during the next 40 seconds trigger it 5–6 times (MH board: turn the blue knob until its LED flips; IR board: wave a hand). You should see all steps pass: the input reads both 0 and 1, the inverted copy flips the other way, and the counter counts.
+#### Step 25. GY-511 compass and accelerometer (I2C)
 
-Only the HC-SR04 needs a resistor divider: it is a 5 V sensor and its Echo signal is too high for the S3 (see [SETUP.md](SETUP.md#pin-power-and-wiring-task-8)).
+1. Unplug the USB cable.
+2. Remove the **GP1 ↔ GP2** test wire.
+3. Connect 4 wires (leave the GY-511's other pins empty):
+
+   | GY-511 pin | S3 pin | Where on the S3 |
+   |---|---|---|
+   | VIN | 3V3 | right side, 3rd from the top |
+   | GND | GND | right side, 2nd from the top |
+   | SDA | GP1 | left side, 3rd from the top |
+   | SCL | GP2 | left side, 4th from the top |
+
+4. Plug the USB cable back in.
+5. Run:
+   ```sh
+   sh tools/s3.sh test 4c-mag
+   ```
+
+**You should see:** `15/15 passed`.
+**Why it proves the sensor is real:** the chip answers with its factory ID `48 34 33` ("H43"), which no wire can fake, and the accelerometer measures gravity (about 1 g).
+
+#### Step 26. Real digital input (MH sensor board or the 3-pin IR board)
+
+1. Unplug the USB cable and remove the GY-511.
+2. Connect 3 wires:
+
+   | Sensor pin | S3 pin | Where on the S3 |
+   |---|---|---|
+   | VCC (or +) | 3V3 | right side, 3rd from the top |
+   | GND (or −) | GND | right side, 2nd from the top |
+   | DO (MH board) or OUT/S (IR board) | GP1 | left side, 3rd from the top |
+
+3. Plug the USB cable back in.
+4. Run:
+   ```sh
+   sh tools/s3.sh test 4d-ir
+   ```
+5. For the next **40 seconds**, trigger the sensor 5–6 times:
+   - **MH board:** slowly turn the blue knob back and forth until its right-hand LED switches on and off.
+   - **IR board:** wave your hand over it.
+
+**You should see:** every step `PASS`.
+**Why it proves the input works:** a real sensor drives the pin to both 0 and 1, the inverted copy reads the opposite, and the counter counts the changes.
+
+#### Why no resistor
+
+An S3 pin can take at most 3.3 V. The GY-511, MH board and IR board are powered from the S3's **3V3** pin, so their signals can never be higher than 3.3 V, and the pull-up or pull-down a digital input needs is built into the chip (`gpio.pull=up` or `down`). The test wires join an S3 pin to another S3 pin, also 3.3 V. Only the **HC-SR04** needs a resistor divider: it is powered from **5V**, so its Echo signal is 5 V and must be divided down before it reaches an S3 pin (wiring in [SETUP.md](SETUP.md#pin-power-and-wiring-task-8)).
 
 If every step matched, this laptop has set up, built, flashed and verified D1 by itself.
 
