@@ -59,7 +59,7 @@ case "$1" in
   build)   build esp32s3_edge ;;
   flash)   build esp32s3_edge && upload esp32s3_edge ;;
   monitor) need_port; arduino-cli monitor --port "$PORT" --config baudrate=115200 ;;
-  test)    need_port; $PY parity/parity_test.py --stage "${2:-4a}" --board s3 --port "$PORT" ;;
+  test)    need_port; $PY parity/parity_test.py --stage "${2:-4a}" --board s3 --port "$PORT" --log "parity/logs/s3/${2:-4a}.log" ;;
   mqtt)    need_port; [ -n "$2" ] || { echo "usage: sh tools/s3.sh mqtt <broker-ip>"; exit 1; }
            $PY parity/mqtt_test.py --broker "$2" --node "${NODE:-s3-001}" --board s3 --port "$PORT" ;;
   haltest) build esp32s3_haltest && upload esp32s3_haltest && $PY parity/hal_test.py --port "$PORT" ;;
