@@ -39,7 +39,13 @@ static active_sensor_t g_sensors[MAX_ACTIVE];
 
 /* Map enum -> name used by bus_lookup */
 static inline const char* proto_name(proto_t p) {
-    return (p==proto_i2c) ? "i2c" : (p==proto_uart) ? "uart" : (p==proto_mqtt) ? "mqtt": "gpio";
+    switch (p) {
+        case proto_i2c:  return "i2c";
+        case proto_uart: return "uart";
+        case proto_gpio: return "gpio";
+        case proto_mqtt: return "mqtt";
+        default:         return "unknown";
+    }
 }
 
 int scheduler_count(void) {
@@ -50,10 +56,17 @@ int scheduler_count(void) {
 
 /* Initialize scheduler */
 void scheduler_reset(void) {
-    /* Driver contexts are calloc'd by init_cfg; free them or every CLEAR
-       leaks one per sensor. Edge-counter interrupts only touch HAL state. */
+    /* Contexts are opaque to the scheduler. Give each driver a chance to
+       stop hardware activity and release platform resources before CLEAR. */
     for (int i = 0; i < MAX_ACTIVE; i++) {
-        if (g_sensors[i].in_use && g_sensors[i].ctx) free(g_sensors[i].ctx);
+        active_sensor_t *S = &g_sensors[i];
+        if (S->streaming && S->bus && S->bus->stream_stop) {
+            S->bus->stream_stop(S->ctx);
+        }
+        if (S->ctx) {
+            if (S->bus && S->bus->deinit) S->bus->deinit(S->ctx);
+            else free(S->ctx); /* compatibility for an out-of-tree driver */
+        }
     }
     memset(g_sensors, 0, sizeof(g_sensors));
     SLOG("reset: cleared %d slots", (int)MAX_ACTIVE);
@@ -128,11 +141,23 @@ int scheduler_add_config(const app_cfg_t *cfg_in) {
                 .kv_pairs = (void *)&S->cfg_copy
             };
 
-            if (S->bus->init_cfg && S->bus->init_cfg(&scfg, &S->ctx) != 0) {
+            void *new_ctx = NULL;
+            int init_rc = S->bus->init_cfg ? S->bus->init_cfg(&scfg, &new_ctx) : -1;
+            if (init_rc != 0) {
+                /* A driver should normally clean up and return NULL on
+                   failure. This also protects against a partially returned
+                   context from a future driver such as SPI. */
+                if (new_ctx) {
+                    if (S->bus->deinit) S->bus->deinit(new_ctx);
+                    else free(new_ctx);
+                }
                 SLOG("add[%d]: init_cfg FAILED for %s on %s", i, cfg_in->name, pname);
+                S->bus = NULL;
+                S->ctx = NULL;
                 S->in_use = false;
                 return -2;
             }
+            S->ctx = new_ctx;
 
             if (S->bus->probe) (void)S->bus->probe(S->ctx);
 

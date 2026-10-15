@@ -221,6 +221,7 @@ static int onewire_dht_read(int pin, uint16_t *humidity_x10, int16_t *temp_x10)
 static int gpio_init_cfg(const sensor_cfg_t *scfg, void **ctx_out)
 {
     if (!ctx_out || !scfg) return -1;
+    *ctx_out = NULL;
 
     // Get the real parsed config (same as I2C does)
     const app_cfg_t *cfg = (const app_cfg_t *)scfg->kv_pairs;
@@ -337,6 +338,16 @@ static int gpio_probe(void *ctx_)
         return 0;
     }
     return 0;
+}
+
+static void gpio_deinit(void *ctx_)
+{
+    gpio_ctx_t *ctx = (gpio_ctx_t *)ctx_;
+    if (!ctx) return;
+    if (ctx->irq_count) {
+        (void)hal_gpio_count_edges(ctx->g.gpio_pin, false);
+    }
+    free(ctx);
 }
 
 
@@ -458,6 +469,7 @@ static void gpio_stream_stop(void *ctx)  { (void)ctx; }
 const bus_t bus_gpio = {
     .name         = "gpio",
     .init_cfg     = gpio_init_cfg,
+    .deinit       = gpio_deinit,
     .probe        = gpio_probe,
     .poll_once    = gpio_poll_once,
     .stream_start = gpio_stream_start,

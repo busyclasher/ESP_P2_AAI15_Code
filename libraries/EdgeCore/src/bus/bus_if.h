@@ -13,6 +13,7 @@ typedef struct sensor_cfg {
 typedef struct {
     const char *name;
     int  (*init_cfg)(const sensor_cfg_t *cfg, void **ctx_out);
+    void (*deinit)(void *ctx);
     int  (*probe)(void *ctx);
     int  (*poll_once)(void *ctx, uint8_t *buf, size_t cap);
     void (*stream_start)(void *ctx);
