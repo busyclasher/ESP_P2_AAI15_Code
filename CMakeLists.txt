@@ -38,31 +38,35 @@ include(tflmicro.cmake)
 
 # Add executable. Default name is the project name, version 0.1
 
+# Platform-independent core, shared with the ESP32-S3 Arduino build (task 12)
+set(EDGECORE ${CMAKE_CURRENT_LIST_DIR}/libraries/EdgeCore/src)
+
 add_executable(project_v3
     project_v3/main.c
 
-    project_v3/application/repl.c
-    project_v3/application/config_parser.c
-    project_v3/application/scheduler.c
-    project_v3/application/output_format.c
+    ${EDGECORE}/application/repl.c
+    ${EDGECORE}/application/config_parser.c
+    ${EDGECORE}/application/scheduler.c
+    ${EDGECORE}/application/output_format.c
 
-    project_v3/mqtt/mqtt_config_parser.c
-    project_v3/mqtt/mqtt_json_parser.c
+    ${EDGECORE}/mqtt/mqtt_config_parser.c
+    ${EDGECORE}/mqtt/mqtt_json_parser.c
+    ${EDGECORE}/mqtt/sensor_bridge.c
     project_v3/mqtt/mqtt_telemetry.c
     project_v3/mqtt/mqtt_model_transfer.c
-    project_v3/mqtt/sensor_bridge.c
 
-    project_v3/bus/i2c.c
-    project_v3/bus/uart.c
-    project_v3/bus/gpio.c
-    project_v3/bus/bus_if.c
+    ${EDGECORE}/bus/bus_if.c
+    ${EDGECORE}/bus/i2c.c
+    ${EDGECORE}/bus/uart.c
+    ${EDGECORE}/bus/gpio.c
 
-    project_v3/rule_engine/rules.c
-    project_v3/rule_engine/rule_expr.c
-    project_v3/rule_engine/rule_action.c
+    ${EDGECORE}/rule_engine/rules.c
+    ${EDGECORE}/rule_engine/rule_expr.c
+    ${EDGECORE}/rule_engine/rule_action.c
 
+    ${EDGECORE}/inference_engine/inference_manager.c
     project_v3/inference_engine/tflite_wrapper.cpp
-    project_v3/inference_engine/inference_manager.c
+
     project_v3/platform/pico/hal_pico.c
     )
 
@@ -91,21 +95,17 @@ target_link_libraries(project_v3
 
 # Add the standard include files to the build
 target_include_directories(project_v3 PRIVATE
+    ${EDGECORE}
     ${CMAKE_CURRENT_LIST_DIR}/project_v3/include
     ${CMAKE_CURRENT_LIST_DIR}/project_v3/include/mqtt
-    ${CMAKE_CURRENT_LIST_DIR}/project_v3/application
-    ${CMAKE_CURRENT_LIST_DIR}/project_v3/mqtt
-    ${CMAKE_CURRENT_LIST_DIR}/project_v3/bus
-    ${CMAKE_CURRENT_LIST_DIR}/project_v3/rule_engine
-    ${CMAKE_CURRENT_LIST_DIR}/project_v3/inference_engine
 )
 
 add_library(jsmn STATIC
-    project_v3/third_party/jsmn/jsmn.c
+    ${EDGECORE}/third_party/jsmn/jsmn.c
 )
 
 target_include_directories(jsmn PUBLIC 
-    ${CMAKE_CURRENT_LIST_DIR}/project_v3/include/third_party/jsmn
+    ${EDGECORE}/third_party/jsmn
 )
 
 target_compile_definitions(jsmn PUBLIC

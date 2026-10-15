@@ -34,3 +34,10 @@ Thumbs.db
 
 # Python bytecode cache
 __pycache__/
+
+# ESP32-S3 Wi-Fi credentials and libraries installed into the sketchbook by Library Manager
+esp32s3_edge/wifi_credentials.h
+libraries/MQTT/
+
+# Python environment for the test scripts (tools/s3.sh setup)
+.venv/

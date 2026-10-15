@@ -17,7 +17,7 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 import serial
 
-from parity_test import BAUD, all_seen, capture_after_replug, check, find_port, read_for
+from parity_test import BAUD, BOARD_PINS, all_seen, capture_after_replug, check, find_port, map_pins, read_for
 
 NODE = "pico-001"
 PEER = "pico-002"  # played by the host
@@ -43,74 +43,82 @@ JSON_CFG = ('{"configs":[{"name":"JDIG","proto":"gpio","mode":"poll","freq_hz":1
 # Serial lines and broker messages are checked together; a broker message is
 # seen as "BROKER <topic> <payload>". A topic of None only listens, and
 # "send_model.py" runs the upload script.
-STEPS = [
-    ("connect", "Board is on the broker, announces itself and sends heartbeats", None, None, 15.0,
-     [r"^\[MQTT\] Status: Connected",
-      rf"^BROKER pico/{NODE}/presence \{{\"node\":\"{NODE}\"",
-      rf"^BROKER pico/{NODE}/heartbeat \{{\"uptime_s\":\d+\}}"]),
-    ("cfg-text", "Text config over MQTT is applied and acknowledged", CFG, DIG, 6.0,
-     [r"^\[CFG\] added #\d+: DIG", rf"^BROKER pico/{NODE}/status/config OK:DIG"]),
-    ("rule-text", "Text rule over MQTT is applied and acknowledged", CFG,
-     "BEGINRULE|name=R_LOG|source=DIG|calc=s=u8(0)|when=s==0|action=log:pin low|ENDRULE", 6.0,
-     [r"^\[RULE\] added name=R_LOG", rf"^BROKER pico/{NODE}/status/rule OK:R_LOG"]),
-    ("cmd-run", "RUN over MQTT starts sampling; telemetry and rule events reach the broker",
-     CMD, "RUN", 8.0,
-     [r"^\[CMD\] RUN", r"^proto=gpio src=DIG len=3", r"^\[RULE\] R_LOG: pin low",
-      rf"^BROKER pico/{NODE}/sensor/DIG/line proto=gpio src=DIG len=3 ts=\d+ :",
-      r"^BROKER pico/rule/R_LOG/event .*msg=pin low"]),
-    ("cmd-show", "SHOW over MQTT lists the sensor", CMD, "SHOW", 6.0,
-     [r"^\[CMD\] SHOW", r"name=DIG"]),
-    ("cmd-stop", "STOP over MQTT stops sampling", CMD, "STOP", 6.0, [r"^\[CMD\] STOP"]),
-    ("cmd-clear", "CLEAR over MQTT removes sensors and rules", CMD, "CLEAR", 6.0,
-     [r"^\[CMD\] CLEAR"]),
-    ("cfg-json", "JSON config with a sensor and a rule is converted and applied", CFG, JSON_CFG, 8.0,
-     [r"^\[CFG\] mqtt_json_try_convert_to_inline -> [1-9]", r"^\[CFG\] added #\d+: JDIG",
-      r"^\[RULE\] added name=R_JSON",
-      rf"^BROKER pico/{NODE}/status/config OK:JDIG", rf"^BROKER pico/{NODE}/status/rule OK:R_JSON"]),
-    ("json-run", "The JSON rule fires", CMD, "RUN", 8.0,
-     [r"^proto=gpio src=JDIG len=3", r"^\[RULE\] R_JSON: json rule"]),
-    ("json-stop", "STOP", CMD, "STOP", 6.0, [r"^\[CMD\] STOP"]),
-    ("cmd-unknown", "An unknown command over MQTT is rejected", CMD, "FOO", 6.0,
-     [r"^\[CMD\] Unknown: FOO"]),
-    ("cmd-clear-2", "CLEAR", CMD, "CLEAR", 6.0, [r"^\[CMD\] CLEAR"]),
-    # P-28: remote actions, with the host as pico-002
-    ("to-cfg", "Sensor for the remote-action rules", CFG, DIG, 6.0, [r"^\[CFG\] added #\d+: DIG"]),
-    ("to-rule-cmd", "Rule with a cmd.to action is accepted", CFG,
-     f"BEGINRULE|name=R_CMDTO|source=DIG|calc=s=u8(0)|when=s==0|action=cmd.to:{PEER}:RUN|ENDRULE", 6.0,
-     [r"^\[RULE\] added name=R_CMDTO"]),
-    ("to-rule-cfg", "Rule with a cfg.to action is accepted", CFG,
-     rf"BEGINRULE|name=R_CFGTO|source=DIG|calc=s=u8(0)|when=s==0|action=cfg.to:{PEER}:BEGINCFG\|name=LED"
-     r"\|proto=gpio\|gpio.mode=digital\|gpio.pin=25\|ENDCFG|ENDRULE", 6.0,
-     [r"^\[RULE\] added name=R_CFGTO"]),
-    ("to-run", "Both rules send to pico-002 through the broker", CMD, "RUN", 8.0,
-     [rf"^\[RULE\] R_CMDTO: cmd.to -> node={PEER} cmd='RUN'", rf"^\[RULE\] R_CFGTO: cfg.to -> node={PEER}",
-      rf"^BROKER pico/{PEER}/cmd RUN$", rf"^BROKER pico/{PEER}/config .*BEGINCFG.*name=LED"]),
-    ("to-stop", "STOP", CMD, "STOP", 6.0, [r"^\[CMD\] STOP"]),
-    ("to-clear", "CLEAR", CMD, "CLEAR", 6.0, [r"^\[CMD\] CLEAR"]),
-    # P-29: model upload, then inference on the uploaded model
-    ("model-upload", "send_model.py uploads the model and parameters; the board verifies and loads them",
-     "send_model.py", None, 120.0,
-     [r"^\[MODEL\] Transfer starting: 16440 bytes", r"^\[MODEL\] Transfer complete! 16440 bytes verified",
-      r"^\[INFER\] Auto-load successful", r"^\[INFER\] Model loaded: 16 inputs, 16 outputs",
-      rf"^\[MQTT\] Norm params on: pico/{NODE}/model/params", r"^\[INFER\] Loaded 16 normalization params",
-      r"!CRC32 mismatch", r"!Auto-load FAILED"]),
-    ("infer-cfg", "Sensor for the inference rule", CFG, DIG, 6.0, [r"^\[CFG\] added #\d+: DIG"]),
-    ("infer-rule", "Rule that runs inference is accepted", CFG,
-     r"BEGINRULE|name=R_INF|source=DIG|calc=s=u8(0)|when=1|action=batch: infer.set:0:1.0 \| infer.run|ENDRULE",
-     6.0, [r"^\[RULE\] added name=R_INF"]),
-    ("infer-run", "Inference runs on the uploaded model", CMD, "RUN", 8.0,
-     [r"^\[INFER\] invoke=\d+us", r"!Invoke failed"]),
-    ("infer-stop", "STOP", CMD, "STOP", 6.0, [r"^\[CMD\] STOP"]),
-    ("infer-clear", "CLEAR", CMD, "CLEAR", 6.0, [r"^\[CMD\] CLEAR"]),
-    # P-28: bridging a sensor published by pico-002
-    ("bridge-cfg", "Remote MQTT sensor following pico-002/LIGHT is accepted", CFG,
-     f"BEGINCFG|name=REM|proto=mqtt|mode=poll|freq_hz=1|remote_node={PEER}|remote_source=LIGHT|ENDCFG", 6.0,
-     [rf"^\[SCHED\] added MQTT-remote: local=REM <- {PEER}/LIGHT"]),
-    ("bridge-line", "A line from pico-002 is bridged into the local sensor REM",
-     f"pico/{PEER}/sensor/LIGHT/line", "proto=i2c src=LIGHT len=2 ts=1 : 12 34", 8.0,
-     [rf"^\[BRIDGE\] on_remote_line: {PEER}/LIGHT -> local=REM", r"^proto=mqtt src=REM len=2 ts=\d+ : 12 34"]),
-    ("bridge-clear", "CLEAR", CMD, "CLEAR", 6.0, [r"^\[CMD\] CLEAR"]),
-]
+def make_steps(node):
+    """The steps for one node id; the stages were written for pico-001."""
+    NODE = node
+    CFG = f"pico/{node}/config"
+    CMD = f"pico/{node}/cmd"
+    return [
+        ("connect", "Board is on the broker, announces itself and sends heartbeats", None, None, 15.0,
+         [r"^\[MQTT\] Status: Connected",
+          rf"^BROKER pico/{NODE}/presence \{{\"node\":\"{NODE}\"",
+          rf"^BROKER pico/{NODE}/heartbeat \{{\"uptime_s\":\d+\}}"]),
+        ("cfg-text", "Text config over MQTT is applied and acknowledged", CFG, DIG, 6.0,
+         [r"^\[CFG\] added #\d+: DIG", rf"^BROKER pico/{NODE}/status/config OK:DIG"]),
+        ("rule-text", "Text rule over MQTT is applied and acknowledged", CFG,
+         "BEGINRULE|name=R_LOG|source=DIG|calc=s=u8(0)|when=s==0|action=log:pin low|ENDRULE", 6.0,
+         [r"^\[RULE\] added name=R_LOG", rf"^BROKER pico/{NODE}/status/rule OK:R_LOG"]),
+        ("cmd-run", "RUN over MQTT starts sampling; telemetry and rule events reach the broker",
+         CMD, "RUN", 8.0,
+         [r"^\[CMD\] RUN", r"^proto=gpio src=DIG len=3", r"^\[RULE\] R_LOG: pin low",
+          rf"^BROKER pico/{NODE}/sensor/DIG/line proto=gpio src=DIG len=3 ts=\d+ :",
+          r"^BROKER pico/rule/R_LOG/event .*msg=pin low"]),
+        ("cmd-show", "SHOW over MQTT lists the sensor", CMD, "SHOW", 6.0,
+         [r"^\[CMD\] SHOW", r"name=DIG"]),
+        ("cmd-stop", "STOP over MQTT stops sampling", CMD, "STOP", 6.0, [r"^\[CMD\] STOP"]),
+        ("cmd-clear", "CLEAR over MQTT removes sensors and rules", CMD, "CLEAR", 6.0,
+         [r"^\[CMD\] CLEAR"]),
+        ("cfg-json", "JSON config with a sensor and a rule is converted and applied", CFG, JSON_CFG, 8.0,
+         [r"^\[CFG\] mqtt_json_try_convert_to_inline -> [1-9]", r"^\[CFG\] added #\d+: JDIG",
+          r"^\[RULE\] added name=R_JSON",
+          rf"^BROKER pico/{NODE}/status/config OK:JDIG", rf"^BROKER pico/{NODE}/status/rule OK:R_JSON"]),
+        ("json-run", "The JSON rule fires", CMD, "RUN", 8.0,
+         [r"^proto=gpio src=JDIG len=3", r"^\[RULE\] R_JSON: json rule"]),
+        ("json-stop", "STOP", CMD, "STOP", 6.0, [r"^\[CMD\] STOP"]),
+        ("cmd-unknown", "An unknown command over MQTT is rejected", CMD, "FOO", 6.0,
+         [r"^\[CMD\] Unknown: FOO"]),
+        ("cmd-clear-2", "CLEAR", CMD, "CLEAR", 6.0, [r"^\[CMD\] CLEAR"]),
+        # P-28: remote actions, with the host as pico-002
+        ("to-cfg", "Sensor for the remote-action rules", CFG, DIG, 6.0, [r"^\[CFG\] added #\d+: DIG"]),
+        ("to-rule-cmd", "Rule with a cmd.to action is accepted", CFG,
+         f"BEGINRULE|name=R_CMDTO|source=DIG|calc=s=u8(0)|when=s==0|action=cmd.to:{PEER}:RUN|ENDRULE", 6.0,
+         [r"^\[RULE\] added name=R_CMDTO"]),
+        ("to-rule-cfg", "Rule with a cfg.to action is accepted", CFG,
+         rf"BEGINRULE|name=R_CFGTO|source=DIG|calc=s=u8(0)|when=s==0|action=cfg.to:{PEER}:BEGINCFG\|name=LED"
+         r"\|proto=gpio\|gpio.mode=digital\|gpio.pin=25\|ENDCFG|ENDRULE", 6.0,
+         [r"^\[RULE\] added name=R_CFGTO"]),
+        ("to-run", "Both rules send to pico-002 through the broker", CMD, "RUN", 8.0,
+         [rf"^\[RULE\] R_CMDTO: cmd.to -> node={PEER} cmd='RUN'", rf"^\[RULE\] R_CFGTO: cfg.to -> node={PEER}",
+          rf"^BROKER pico/{PEER}/cmd RUN$", rf"^BROKER pico/{PEER}/config .*BEGINCFG.*name=LED"]),
+        ("to-stop", "STOP", CMD, "STOP", 6.0, [r"^\[CMD\] STOP"]),
+        ("to-clear", "CLEAR", CMD, "CLEAR", 6.0, [r"^\[CMD\] CLEAR"]),
+        # P-29: model upload, then inference on the uploaded model
+        ("model-upload", "send_model.py uploads the model and parameters; the board verifies and loads them",
+         "send_model.py", None, 120.0,
+         [r"^\[MODEL\] Transfer starting: 16440 bytes", r"^\[MODEL\] Transfer complete! 16440 bytes verified",
+          r"^\[INFER\] Auto-load successful", r"^\[INFER\] Model loaded: 16 inputs, 16 outputs",
+          rf"^\[MQTT\] Norm params on: pico/{NODE}/model/params", r"^\[INFER\] Loaded 16 normalization params",
+          r"!CRC32 mismatch", r"!Auto-load FAILED"]),
+        ("infer-cfg", "Sensor for the inference rule", CFG, DIG, 6.0, [r"^\[CFG\] added #\d+: DIG"]),
+        ("infer-rule", "Rule that runs inference is accepted", CFG,
+         r"BEGINRULE|name=R_INF|source=DIG|calc=s=u8(0)|when=1|action=batch: infer.set:0:1.0 \| infer.run|ENDRULE",
+         6.0, [r"^\[RULE\] added name=R_INF"]),
+        ("infer-run", "Inference runs on the uploaded model", CMD, "RUN", 8.0,
+         [r"^\[INFER\] invoke=\d+us", r"!Invoke failed"]),
+        ("infer-stop", "STOP", CMD, "STOP", 6.0, [r"^\[CMD\] STOP"]),
+        ("infer-clear", "CLEAR", CMD, "CLEAR", 6.0, [r"^\[CMD\] CLEAR"]),
+        # P-28: bridging a sensor published by pico-002
+        ("bridge-cfg", "Remote MQTT sensor following pico-002/LIGHT is accepted", CFG,
+         f"BEGINCFG|name=REM|proto=mqtt|mode=poll|freq_hz=1|remote_node={PEER}|remote_source=LIGHT|ENDCFG", 6.0,
+         [rf"^\[SCHED\] added MQTT-remote: local=REM <- {PEER}/LIGHT"]),
+        ("bridge-line", "A line from pico-002 is bridged into the local sensor REM",
+         f"pico/{PEER}/sensor/LIGHT/line", "proto=i2c src=LIGHT len=2 ts=1 : 12 34", 8.0,
+         [rf"^\[BRIDGE\] on_remote_line: {PEER}/LIGHT -> local=REM", r"^proto=mqtt src=REM len=2 ts=\d+ : 12 34"]),
+        ("bridge-clear", "CLEAR", CMD, "CLEAR", 6.0, [r"^\[CMD\] CLEAR"]),
+    ]
+
+
+STEPS = make_steps(NODE)
 
 
 def drain(inbox, log):
@@ -141,6 +149,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--broker", required=True, help="broker address, the same as MQTT_HOST")
     parser.add_argument("--port", help="serial port (default: first usbmodem/ACM port found)")
+    parser.add_argument("--node", default=NODE, help="node id the board uses in its topics")
+    parser.add_argument("--board", default="pico", choices=sorted(BOARD_PINS),
+                        help="board under test; s3 maps the Pico pin numbers to the S3 pins")
     parser.add_argument("--log", default="parity/logs/mqtt.log", help="raw serial and broker log")
     parser.add_argument("--boot", action="store_true",
                         help="wait for the board to be replugged and check its Wi-Fi and MQTT boot log first")
@@ -169,13 +180,17 @@ def main():
             ser = serial.Serial(port, BAUD, timeout=0.1)
             read_for(ser, 1.0, log)
 
-        for step_id, description, topic, payload, wait, patterns in STEPS:
+        pins = BOARD_PINS[args.board]
+        for step_id, description, topic, payload, wait, patterns in make_steps(args.node):
+            if payload:
+                payload = map_pins(payload, pins)
+            patterns = [map_pins(p, pins) for p in patterns]
             log.write(f"{time.strftime('%H:%M:%S')} --- {step_id}: {topic} {payload}\n")
             log.flush()
             proc = None
             if topic == "send_model.py":
                 proc = subprocess.Popen(
-                    [sys.executable, "send_model.py", "--broker", args.broker, "--node", NODE,
+                    [sys.executable, "send_model.py", "--broker", args.broker, "--node", args.node,
                      "--model", "autoencoder_int8 (2).tflite", "--norm", "norm_stats (2).json",
                      "--threshold", "thresholds (2).json"],
                     cwd=MODELS, stdout=log, stderr=subprocess.STDOUT)

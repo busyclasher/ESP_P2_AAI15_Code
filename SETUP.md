@@ -116,8 +116,6 @@ git submodule update --init
 
 `s3-port` is the D1 branch. It starts from the supplied `Pico_Sample` code and adds the TFLite Micro submodule reference that was missing from it, plus this document. `git submodule update --init` downloads that library; if you skip it, the build fails with the missing-library error described in section 10.
 
-For D2 SPI development, start from that baseline and use `git checkout s3-port-d2`. The D2 branch does not claim SPI support until [D2_SPI_TODO.md](D2_SPI_TODO.md) is complete; its proposed SPI schema and pin assignments are planning inputs, not proof that hardware has been validated.
-
 ## 7. Create your WiFi and MQTT credentials file
 
 ```
@@ -343,6 +341,10 @@ Sitt selected the locally tested versions above as the project baseline on 2026-
 
 On 2026-10-07, Arduino IDE 2.3.10 showed **esp32 by Espressif Systems 3.3.12 installed**. Its **Verify** action compiled the same sketch with **ESP32S3 Dev Module** selected: 273,621 bytes of program storage and 21,592 bytes of global variables were reported, with no compile error. The board was not connected during that check. The later physical upload and serial result is recorded below; Task 7 still needs the same build verified on the other team machines.
 
+**Second machine — Hasif, macOS (arduino-cli 1.5.1, core 3.3.12), 2026-10-13:** the same minimal sketch with the same board options compiled to 273,317 bytes of program storage and 21,592 bytes of global variables, with no error. Globals match exactly; the 304-byte program difference is the host toolchain build.
+
+**Clean install — Hasif, macOS, 2026-10-14:** a fresh clone of `s3-port` (commit `d351876`) from GitHub, built with arduino-cli using empty data and sketchbook directories (nothing pre-installed). `sh tools/s3.sh setup` installed core 3.3.12 and MQTT 2.5.3; `sh tools/s3.sh flash` built the firmware (1,331,494 bytes) and the upload hash verified; on the board 4a passed 14/14, 4b 25/25 and 5-neg 27/27. Any other machine checks itself with `sh tools/s3.sh check`: the versions must read 3.3.12 and 2.5.3, and the bring-up sketch must report 21,592 bytes of globals.
+
 1. Install the agreed Arduino IDE version from the [Arduino software page](https://www.arduino.cc/en/software).
 2. In Arduino IDE, open **File → Preferences** and add Espressif's stable Boards Manager URL to **Additional boards manager URLs**: `https://espressif.github.io/arduino-esp32/package_esp32_index.json`.
 3. Open **Tools → Board → Boards Manager**, find **esp32 by Espressif Systems**, and install version **3.3.12**. Select **ESP32S3 Dev Module** for the HW-747 board used in this bring-up and apply the recorded options below.
@@ -356,23 +358,58 @@ Record these from the actual board markings, its matching pinout and a physical 
 
 | Item | Confirmed value |
 | --- | --- |
-| Exact Super Mini board/revision and ESP32-S3 module marking | User confirmed the physical board matches the supplied [HW-747 Super Mini pinout diagram](Pinout_Diagram_S3.jpg) on 2026-10-13; exact chip/module marking **TODO — read from the board** |
+| Exact Super Mini board/revision and ESP32-S3 module marking | User confirmed the physical board matches the supplied [HW-747 Super Mini pinout diagram](Pinout_Diagram_S3.jpg) on 2026-10-13; no module can: the bare chip is an **ESP32-S3FH4R2** (QFN56, revision v0.2), identified electronically on 2026-10-14 by esptool 5.3.1 `flash-id` on macOS: `Embedded Flash 4MB (XMC), Embedded PSRAM 2MB (AP_3v3)`, 40 MHz crystal, flash ID 46/4016 |
 | Flash size | 4 MB embedded flash, detected on COM6 with esptool v5.3.1 on 2026-10-13 |
-| PSRAM presence and size | 2 MB embedded PSRAM (AP_3v3), reported by esptool; its use from Arduino remains untested |
-| Exposed, usable GPIOs and reserved/unsafe pins | Candidate exposed pins are shown in the user-confirmed [HW-747 pinout diagram](Pinout_Diagram_S3.jpg); safe/reserved/strapping pins and final assignments **TODO — verify before wiring sensors** |
+| PSRAM presence and size | 2 MB embedded quad PSRAM (AP_3v3), reported by esptool; used by the firmware with PSRAM `QSPI PSRAM` (about 2.0 MB free at run time, `TASKS` output) |
+| Exposed, usable GPIOs and reserved/unsafe pins | Candidate exposed pins are shown in the user-confirmed [HW-747 pinout diagram](Pinout_Diagram_S3.jpg); see the pin and power table below; enforced in firmware by `hal_gpio_valid` |
 | USB connector and serial path (`Serial` via native USB CDC or USB-to-UART bridge) | USB-Serial/JTAG reported by esptool; the board enumerated on COM6 as `ESP32 Family Device, Ozobot DRVKit`, and sketch `Serial` output was observed on COM6 at 115200 baud |
 | Arduino IDE board profile | `ESP32S3 Dev Module` used for local compile, upload, and Serial Monitor verification |
-| Board-specific Flash Size and PSRAM menu choices | Flash Size: `4MB (32Mb)`; PSRAM: `Disabled` for the minimal bring-up sketch, despite 2 MB being present; a working PSRAM mode for later tasks is **TODO** |
-| Board-specific USB Mode, USB CDC On Boot and Upload Mode choices, if offered | USB-Serial/JTAG connection; USB CDC On Boot: `Enabled`; Upload Mode: `UART0 / Hardware CDC`; separate USB Mode option **TODO — not visible in the supplied menu screenshot** |
-| Port and any first-upload/boot-button procedure | COM6 used for upload and monitoring; no manual BOOT-button step was needed in this local run; repeatability on other boards **TODO** |
+| Board-specific Flash Size and PSRAM menu choices | Flash Size: `4MB (32Mb)`; PSRAM: `Disabled` for the minimal bring-up sketch, despite 2 MB being present; the full firmware uses `QSPI PSRAM` (verified: Wi-Fi, MQTT and the tensor arena run from it) with Partition Scheme `Huge APP (3MB No OTA/1MB SPIFFS)` |
+| Board-specific USB Mode, USB CDC On Boot and Upload Mode choices, if offered | USB-Serial/JTAG connection; USB CDC On Boot: `Enabled`; Upload Mode: `UART0 / Hardware CDC`; USB Mode `Hardware CDC and JTAG` (arduino-cli `USBMode=hwcdc`) |
+| Port and any first-upload/boot-button procedure | COM6 used for upload and monitoring; no BOOT button needed on either machine (Windows COM6, macOS `/dev/cu.usbmodem*`); if an upload reports "serial TX path seems to be down", use another data cable or hold BOOT while plugging in |
 
 The read-only probe was `esptool.exe --chip esp32s3 --port COM6 flash-id`; it did not upload or erase firmware. The exact USB and upload settings depend on the board's wiring and Arduino-ESP32 core version. Follow the matching board documentation and verify the result on hardware; do not assume that every ESP32-S3 Super Mini exposes the same console path. Espressif's [USB CDC guide](https://docs.espressif.com/projects/arduino-esp32/en/latest/tutorials/cdc_dfu_flash.html) explains the relevant Arduino menu options.
 
 The Arduino IDE **Tools** menu shown after the successful local upload/monitor run also had these values: Flash Mode `QIO 80MHz`; Partition Scheme `Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)`; Upload Speed `921600`; CPU Frequency `240MHz (WiFi)`; Events Run On `Core 1`; Arduino Runs On `Core 1`. USB DFU On Boot, USB Firmware MSC On Boot, JTAG Adapter, and Erase All Flash Before Sketch Upload were `Disabled`; Core Debug Level was `None`. Record any further menu options if the board profile exposes them.
 
+### Pin, power and wiring (Task 8)
+
+Front view, USB-C at the top ([pinout](Pinout_Diagram_S3.jpg)). Left column top to bottom: TX (GPIO43), RX (GPIO44), GPIO1–7. Right column: 5V, GND, 3V3, GPIO13–8. All GPIO are 3.3 V only and not 5 V tolerant.
+
+| Pins | Use |
+| --- | --- |
+| GPIO1–2, 4–18, 21, 33–44, 47–48 | Usable. GPIO48 drives the on-board RGB LED |
+| GPIO0, 3, 45, 46 | Strapping pins: leave unconnected at boot |
+| GPIO19–20 | Native USB (console and upload): refused by the firmware |
+| GPIO22–25 | Not present on the ESP32-S3: refused |
+| GPIO26–32 | In-package flash and PSRAM: refused |
+| 5V | USB VBUS, for 5 V sensors (HC-SR04, radar); total limited by the USB port (500 mA) |
+| 3V3 | On-board regulator; the vendor gives no rating, so keep sensor load under 100 mA. GPIO source current up to 40 mA, 20 mA recommended |
+
+**Final D1 wiring (no pin conflicts).** Every sensor is owned by SchedulerTask through the shared EdgeCore driver named; the HAL and drivers are Hasif's per the Week 6 review.
+
+```text
+ESP32-S3 Super Mini            Device                     Driver (SchedulerTask)
+GPIO1  (SDA) ─────────────────  GY-511 SDA  (0x1E, 0x19)   bus/i2c.c
+GPIO2  (SCL) ─────────────────  GY-511 SCL
+3V3 ──────────────────────────  GY-511 VIN
+GPIO4  ───────────────────────  HC-SR04 Trig               bus/gpio.c (pulse)
+GPIO7  ──┬── 10k ─────────────  HC-SR04 Echo (5 V)
+         └── 20k ── GND          (1:2 divider, 3.3 V max)
+5V ───────────────────────────  HC-SR04 VCC, radar VCC
+GPIO8  ───────────────────────  digital sensor DO (MH module, IR)  bus/gpio.c (digital/counter)
+GPIO44 (RX) ──────────────────  radar TX                   bus/uart.c (Serial1)
+GPIO43 (TX) ──────────────────  radar RX
+GPIO5  ───────────────────────  PWM/LED output             rule actions (LEDC)
+GND ──────────────────────────  every device GND
+Test only: GPIO1↔GPIO2 (UART loopback, I2C removed), GPIO5↔GPIO6 (GPIO loopback)
+```
+
+Configs for each device are in the README sensor table. Verified so far on this board: GY-511 (`4c-mag`), loopback UART, GPIO and PWM; the HC-SR04 and radar need the divider and the radar module respectively.
+
 ### D2 SPI planning note
 
-D2 proposes SPI2 with SCLK GPIO12, MOSI GPIO11, MISO GPIO13, and CS GPIO10 for the first loopback/readable-device proof. These pins remain provisional until Task 8 closes the integration layout against the exact board/module and all other devices. GPIO13 must not simultaneously serve the planned HC-SR04 Echo input. Keep GPIO19/20 for native USB, keep boot/strapping pins available, and do not use flash/PSRAM-connected pins. Follow [D2_SPI_TODO.md](D2_SPI_TODO.md) for the validation, wiring, fault, benchmark, and evidence gates before treating this mapping as approved.
+D2 initially reserves SPI2/FSPI with SCLK GPIO12, MOSI GPIO11, MISO GPIO13, and CS GPIO10 for loopback or a readable SPI device. The connected TFT currently uses SCLK GPIO12, MOSI GPIO11, CS GPIO10, DC GPIO9, reset GPIO8, and backlight GPIO13, so GPIO13 cannot be both TFT backlight and MISO in the same wiring arrangement. Confirm the proof-device wiring and final controller before implementation. Keep GPIO19/20 for native USB, keep boot/strapping pins available, and do not use flash/PSRAM-connected pins. Follow [D2_SPI_TODO.md](D2_SPI_TODO.md) for validation, fault, benchmark, and evidence gates.
 
 ### Compile, upload and monitor the minimal sketch (Task 9)
 
@@ -381,7 +418,7 @@ D2 proposes SPI2 with SCLK GPIO12, MOSI GPIO11, MISO GPIO13, and CS GPIO10 for t
 3. Click **Verify/Compile**, then **Upload**. Record the IDE, core and board settings used for the result.
 4. Open **Serial Monitor** at **115200 baud** on the confirmed console port. The sketch repeats `Hello from ESP32-S3`, so the line remains visible even if Serial Monitor opens after startup. If upload succeeds but the line is absent, check the actual USB/serial path and IDE USB settings before changing the sketch.
 
-Task 9's local hardware check passes after the line is observed on the physical Super Mini. The safe sensor pinout and a working Arduino PSRAM mode remain unverified.
+Task 9's local hardware check passes after the line is observed on the physical Super Mini. The pin table and PSRAM mode are now verified (task 8 section above).
 
 **Local bring-up result — Sitt, Windows, 2026-10-13:** With Arduino IDE 2.3.10, Arduino-ESP32 core 3.3.12, `ESP32S3 Dev Module`, and COM6, the minimal sketch compiled and uploaded successfully. Arduino IDE reported that the written data hash was verified and completed the upload. Serial Monitor at 115200 baud showed `Hello from ESP32-S3` repeatedly at approximately one-second intervals. This verifies the sketch, upload, and console path on this board with the Tools menu selections recorded above. The retained observation record is [`parity/logs/9-arduino-bringup.txt`](parity/logs/9-arduino-bringup.txt); team-wide Task 7 verification remains outstanding.
 
@@ -397,4 +434,81 @@ Shared Configurable Edge code
    Pico SDK   Arduino-ESP32
 ```
 
-Configuration parsing, the common sensor representation, scheduler, rule engine, output formatting, MQTT payload handling and application/ML logic should not call Arduino or Pico SDK functions directly. Platform operations belong in the HAL or platform drivers. If partitions, PSRAM access, a compatible TFLite Micro integration or measured performance require underlying ESP-IDF APIs from Arduino, document each exception and keep it below the shared-code boundary. The MQTT and ML library choices are still open and must be compatibility-tested and version-pinned before implementation.
+Configuration parsing, the common sensor representation, scheduler, rule engine, output formatting, MQTT payload handling and application/ML logic should not call Arduino or Pico SDK functions directly. Platform operations belong in the HAL or platform drivers. If partitions, PSRAM access, a compatible TFLite Micro integration or measured performance require underlying ESP-IDF APIs from Arduino, document each exception and keep it below the shared-code boundary. The MQTT library remains to be selected. For Task 20, Arduino-ESP32 3.3.12 bundles Espressif TFLite Micro 1.4.0; the S3 bridge links and runs the built-in model on the board. Other models and persistent upload still need verification. See the [Task 20 hardware check](parity/task20/README.md).
+
+## Shared EdgeCore library and ESP32-S3 framework build (Tasks 12–13)
+
+The framework's platform-independent code, including the GPIO, I2C and UART drivers, is one Arduino library, [`libraries/EdgeCore/`](libraries/EdgeCore/), and both targets compile it from that folder; there is no second copy. The Pico build lists its sources in the root `CMakeLists.txt` (`EDGECORE`). The ESP32-S3 platform layer is a second library, [`libraries/EdgeS3/`](libraries/EdgeS3/). The minimal `esp32s3/` bring-up sketch stays free of framework code.
+
+| Folder | Contents |
+| --- | --- |
+| `libraries/EdgeCore/src/` | Shared code: configuration, scheduler, REPL, rules, bus drivers, MQTT payload handling, inference manager, and the HAL contract `hal/hal.h` |
+| `project_v3/` | Pico 2 W platform code: `main.c`, lwIP MQTT client, flash model transfer, TFLite Micro wrapper, `platform/pico/hal_pico.c` |
+| `libraries/EdgeS3/src/` | ESP32-S3 platform code: HAL backend, the FreeRTOS runtime from the Week 6 design review, and placeholders for services tasks 19–20 port |
+| `esp32s3_edge/` | ESP32-S3 firmware sketch |
+| `esp32s3_haltest/` | Task 12 HAL timing and console test sketch |
+
+The Pico build steps in sections 9–11 are unchanged.
+
+**Versions:** the task 7 baseline above (Arduino IDE 2.3.10, `esp32` core 3.3.12, no external libraries), with arduino-cli 1.5.1 for command-line builds. Board **ESP32S3 Dev Module** with USB Mode *Hardware CDC and JTAG*, USB CDC On Boot *Enabled*, Flash Size *4MB*, PSRAM *QSPI PSRAM*, Partition Scheme *Huge APP (3MB No OTA/1MB SPIFFS)*: with Wi-Fi, MQTT and TFLite Micro the firmware is about 1.29 MB, which fills 98% of the default 1.2 MB app partition, and the static tables and tensor arena leave under 15 KB of internal RAM, so allocations fall back to the board's 2 MB PSRAM. External library: **MQTT by Joel Gaehwiler 2.5.3** (Library Manager; with the sketchbook set to this repository it installs into `libraries/MQTT/`, which is gitignored). Wi-Fi settings go in `esp32s3_edge/wifi_credentials.h` (copy the `.example`; gitignored); the S3 joins 2.4 GHz WPA2-Personal only. On an iPhone hotspot keep the Personal Hotspot screen open and turn on Maximize Compatibility, or the S3 reports `network not found`.
+
+### Terminal only (recommended)
+
+`tools/s3.sh` wraps the Arduino CLI so no IDE is needed. Run it from the repository root:
+
+```bash
+sh tools/s3.sh setup              # once: core 3.3.12, MQTT 2.5.3, Python env, credentials file
+sh tools/s3.sh flash              # build esp32s3_edge and upload it
+sh tools/s3.sh monitor            # console at 115200 (Ctrl-C to leave)
+sh tools/s3.sh test 4a            # any parity stage on the S3 (4a 4b 4c-uart 5-neg t02 t03 t04 t06 t08 t09 t10)
+sh tools/s3.sh mqtt <broker-ip>   # 27-step MQTT test against node s3-001
+sh tools/s3.sh haltest            # HAL timing, console, PWM, pulse and edge-count checks
+```
+
+Console commands on the S3, besides the REPL: `TASKS` (free stack per task and heap), `WIFISCAN` (networks the S3 can see and why it is not connected), `WIFIDROP` (drops Wi-Fi for 10 s to test reconnection). If an upload fails with "serial TX path seems to be down", replace the USB cable or hold BOOT while plugging in.
+
+### Arduino IDE
+
+1. Open **File → Preferences** and set **Sketchbook location** to the root of this repository. The IDE then finds `libraries/EdgeCore` and `libraries/EdgeS3` in place, with nothing copied.
+2. Install the `esp32` core at the version above (see the task 7 steps), then open `esp32s3_edge/esp32s3_edge.ino` (or `esp32s3_haltest/esp32s3_haltest.ino` for the HAL test).
+3. Select the board and options above under **Tools**, choose the S3's port, and click **Upload**. If the port does not appear or the upload fails, hold **BOOT** while plugging the board in, upload, then press **RESET**.
+4. Open **Serial Monitor** at 115200 baud. The firmware answers the same REPL commands as the Pico (`HELP`, `SHOW`, `RUN`, ...) plus `TASKS`, which prints each RTOS task's free stack and the heap.
+
+### Arduino CLI
+
+```bash
+arduino-cli config set board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli core update-index
+arduino-cli core install esp32:esp32@3.3.12
+FQBN=esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=4M,PSRAM=enabled,PartitionScheme=huge_app
+arduino-cli compile --fqbn $FQBN --libraries libraries esp32s3_edge
+arduino-cli upload  --fqbn $FQBN --port /dev/cu.usbmodemXXXX esp32s3_edge
+```
+
+### Checks
+
+`python3 parity/parity_test.py --stage <stage> --board s3 --port <port>` runs a parity stage on the S3; `--board s3` swaps the Pico pin numbers for the S3 pins (GP16→1, GP17→2, GP18→7, GP20→4, GP21→5, GP22→6, GP25→8), so the loopback jumpers go on S3 pins 1↔2 and 5↔6. `python3 parity/hal_test.py` runs the HAL timing and console checks against `esp32s3_haltest`. `sh tools/check_hal_boundary.sh` compiles every EdgeCore source with no SDK headers, which shows that no shared module bypasses the HAL. With both boards plugged in, always pass `--port`.
+
+## Release (task 23)
+
+Team action: agree first, then one person runs it. Merge `s3-port` into `main` and tag the release:
+
+```sh
+git checkout main && git pull origin main
+git merge --no-ff s3-port -m "Merge s3-port: D1 ESP32-S3 port"
+git tag -a d1-s3-release -m "D1: ESP32-S3 port"
+git push origin main d1-s3-release
+```
+
+Check the release from a clean clone on any machine with the task 7 versions installed (board on USB, Mac on the same hotspot as the S3):
+
+```sh
+git clone --recursive git@github.com:junyonggoh2004/EMBSYS-P2-AAI15.git d1-check && cd d1-check
+git checkout d1-s3-release
+sh tools/s3.sh setup                     # core 3.3.12 and the MQTT library
+cp esp32s3_edge/wifi_credentials.h.example esp32s3_edge/wifi_credentials.h   # then edit it
+sh tools/s3.sh flash
+sh tools/s3.sh test 4a && sh tools/s3.sh test 4b && sh tools/s3.sh test 4c-uart
+```
+
+The clean-clone part was run on 2026-10-14 from `s3-port` before the merge (see the task 7 clean install). Task 23 is done when the team merges, tags, and repeats these commands on the tag.
