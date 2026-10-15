@@ -1,184 +1,225 @@
 # D2 — ESP32-S3 SPI Support To-Do List
 
-Branch: `s3-port-d2` (created from the D1 `s3-port` baseline)  
-Team: Brendan and Jy  
-Status: planning and implementation checklist
+- Branch: `s3-port-d2`
+- Updated baseline: D1 `s3-port` at `ba81f18`, merged into D2 by `9a421ef`
+- Team: Brendan and Jy
+- Status: ready for implementation
 
 ## End outcome
 
-SPI is a first-class runtime-configurable interface behind the same `bus_t` abstraction and registry used by GPIO, UART, and I2C. Application and scheduler code reach an SPI device through `bus_lookup("spi")`; they do not call Arduino or ESP-IDF SPI APIs directly.
+SPI is a first-class runtime-configurable interface behind the same `app_cfg_t`, `bus_t`, registry, scheduler, REPL, and publisher path used by GPIO, I2C, and UART. `proto=spi` must resolve through `bus_lookup("spi")`; shared application code must not call Arduino or ESP-IDF SPI APIs directly.
 
-The finished feature must let a configuration select the SPI host and map SCLK, MOSI, MISO, and chip select at runtime, set clock frequency and SPI mode, transmit and receive data, and report configuration, initialization, timeout, transmit, receive, and verification failures explicitly. A failed operation must never be published as valid-looking sensor data.
+The ESP32-S3 implementation must support validated runtime host, SCLK, MOSI, optional MISO, CS, clock, mode, TX bytes, RX length, and timeout. Failed configuration, initialization, transfer, timeout, or verification must be explicit and must never be published as valid sensor data.
+
+## What D1 already completed
+
+These are no longer D2 blockers or implementation tasks:
+
+- [x] The shared sources are one Arduino library at `libraries/EdgeCore/src/`, also compiled by the Pico CMake build.
+- [x] The ESP32-S3 platform layer is `libraries/EdgeS3/src/`; the production sketch is `esp32s3_edge/esp32s3_edge.ino`.
+- [x] The registry and driver contract exist in `libraries/EdgeCore/src/bus/bus_if.h` and `bus_if.c`.
+- [x] The scheduler owns bus calls from EngineTask; drivers do not mutate scheduler state from callbacks.
+- [x] Invalid protocols are rejected through `app_cfg_t.cfg_error` instead of falling back to I2C.
+- [x] The final D1 board, toolchain, USB, PSRAM, pin rules, test scripts, and evidence locations are documented.
+- [x] D1 GPIO, I2C, UART, rules, MQTT, model storage/inference, fault, timing, and endurance tests have retained S3 evidence.
+- [x] D2 requirements FR-16, FR-17, NFR-08 and tests T-17 to T-23 already exist in `parity/PARITY.md` as proposed rows.
+
+Task 7 still requires every teammate to run the environment check, and D1 release task 23 remains pending, but neither blocks D2 implementation on this branch.
+
+## Actual D1 integration points
+
+| Concern | File(s) D2 must change |
+|---|---|
+| Protocol enum and runtime fields | `libraries/EdgeCore/src/bus/bus_common.h` |
+| Parser and validation | `libraries/EdgeCore/src/application/config_parser.c` |
+| Defaults, `SHOW`, and `CLEAR` | `libraries/EdgeCore/src/application/repl.c`, `scheduler.c` |
+| Common driver contract and registry | `libraries/EdgeCore/src/bus/bus_if.h`, `bus_if.c` |
+| Portable SPI sensor driver | new `libraries/EdgeCore/src/bus/spi.c` |
+| Portable platform contract | `libraries/EdgeCore/src/hal/hal.h` |
+| ESP32-S3 backend | `libraries/EdgeS3/src/hal_esp32s3.cpp` or a tightly scoped EdgeS3 SPI source |
+| Pico compatibility | `project_v3/platform/pico/hal_pico.c`, root `CMakeLists.txt` |
+| S3 build/test entry points | `tools/s3.sh`, new `parity/spi_test.py`, optional `esp32s3_spitest/` |
+| Requirements and user documentation | `parity/PARITY.md`, `README.md`, `SETUP.md`, `ARCHITECTURE.md`, `project_v3/README.md` |
+
+## Critical design corrections from the completed D1 code
+
+- [ ] Add an explicit `deinit(void *ctx)` callback to `bus_t`. `scheduler_reset()` currently calls `free(ctx)` directly, which cannot release an SPI device, shared bus reference, lock, or platform handle safely.
+- [ ] Update GPIO, I2C, and UART `bus_t` initializers with a compatible `deinit` entry (`NULL` where plain `free()` remains sufficient).
+- [ ] Make `scheduler_reset()` stop streaming, call `bus->deinit(ctx)` when present, and only use `free(ctx)` as the compatibility fallback.
+- [ ] On `init_cfg()` failure, clean up any partially returned context before releasing the scheduler slot.
+- [ ] Add `proto_spi` explicitly to `proto_name()`. The current ternary mapping defaults every unrecognised enum to `gpio`, which is unsafe for future protocols.
+- [ ] Do not put a 1024-byte automatic buffer on EngineTask's stack. The current scheduler sample buffer is 128 bytes and D1 recorded task stack headroom. Keep normal scheduled SPI samples bounded (recommended: 128 bytes) and run 8–1024-byte integrity/performance measurements through a dedicated test path using the same HAL/backend transaction implementation.
+- [ ] Keep configured TX bytes in a bounded array inside `app_cfg_t`; never retain pointers into the parser's temporary 160/256-byte buffers.
+- [ ] Treat TFT commands, offsets, rotation, colour order, inversion, and controller initialization as a device driver above the generic SPI transport.
 
 ## Definition of done
 
-- [ ] `proto=spi` is parsed, validated, displayed by `SHOW`, scheduled, and resolved through the common bus registry.
-- [ ] Runtime configuration supports bus/host, SCLK, MOSI, MISO, CS, clock frequency, SPI mode, transmit bytes, receive length, timeout, and any agreed duplex/queue options.
-- [ ] Invalid protocol values and invalid SPI settings are rejected before hardware state is changed.
-- [ ] The ESP32-S3 SPI backend owns platform APIs; shared application code remains platform-neutral.
-- [ ] Multiple chip-select devices can safely share a compatible physical bus, or the implementation returns a clear conflict error.
-- [ ] Contexts and hardware resources are released on `CLEAR`, replacement, failure, and reconfiguration.
-- [ ] Transmit-only, receive, and full-duplex paths have explicit success/error semantics.
-- [ ] A known-pattern loopback or readable SPI peripheral proves byte-for-byte receive integrity.
-- [ ] A real SPI device or TFT demonstrates useful transmit-side operation through the same transport.
-- [ ] Payloads from 8 to 1024 bytes have recorded latency, throughput, timeout/error count, and byte-mismatch count.
-- [ ] D1 boundary checks, Pico reference build, ESP32-S3 build, existing parity tests, and new SPI tests pass or have documented dispositions.
-- [ ] Requirements, architecture, configuration documentation, pin allocation, tests, and retained evidence identify the tested commit, board, tool versions, tester, and date.
+- [ ] `proto=spi` is parsed, validated, displayed by `SHOW`, scheduled, and resolved through `bus_lookup("spi")`.
+- [ ] Runtime configuration supports host, SCLK, MOSI, optional MISO, CS, clock, mode, bounded TX bytes, bounded scheduled RX length, and timeout.
+- [ ] Invalid settings are rejected before hardware state changes.
+- [ ] The generic EdgeCore driver uses only the HAL contract; Arduino/ESP-IDF headers remain below the platform boundary.
+- [ ] Compatible devices share one physical SPI host safely; incompatible host/pin reuse returns a clear conflict.
+- [ ] `CLEAR`, failed initialization, and repeated reconfiguration release all contexts and platform resources.
+- [ ] TX-only and TX/RX paths have explicit success and typed error semantics.
+- [ ] MOSI-to-MISO loopback or a readable device proves byte-for-byte RX integrity.
+- [ ] A TFT or another real SPI device proves useful TX operation through the same transport layer.
+- [ ] Payloads from 8 through 1024 bytes have retained latency, throughput, timeout/error, and mismatch results.
+- [ ] D1 boundary, Pico build, S3 build, HAL, REPL, negative, sensor, inference, and concurrency regressions pass.
+- [ ] Evidence records commit, board, tool versions, pins, clock/mode, tester, and date.
 
-## D1 constraints and dependencies
+## Confirmed hardware context
 
-- [ ] Confirm the Task 8 pin layout before final wiring. Do not use native USB pins GPIO19/20, boot/strapping pins, or flash/PSRAM pins reserved on the actual module.
-- [ ] Reuse the Task 11 HAL and `bus_t` boundary; do not introduce ESP32 headers into shared scheduler, parser, rule, or output code.
-- [ ] Coordinate with Task 12 so the ESP32-S3 build compiles the same shared sources instead of a copied fork.
-- [ ] Keep SPI work below the Task 13 engine ownership model. SPI callbacks or lower-level driver events must not mutate scheduler state directly.
-- [ ] Preserve the D1 completion rule: compiling or drawing on a TFT is not sufficient without negative tests, measurements, and retained evidence.
-- [ ] Record any required direct ESP-IDF `spi_master` use as a documented Arduino-layer exception with a test and justification.
+D1 final allocations are I2C GPIO1/2, HC-SR04 GPIO4/7, digital sensor GPIO8, PWM GPIO5, UART GPIO43/44, and native USB GPIO19/20. Strapping pins GPIO0/3/45/46 and flash/PSRAM pins are unavailable.
 
-## Suggested teammate split
+Use two separate D2 fixtures:
 
-The split is designed to minimize overlapping edits. Swap owners if needed, but keep one owner per file during active work.
+1. **RX/integrity fixture:** FSPI/SPI2, SCLK GPIO12, MOSI GPIO11, MISO GPIO13, CS GPIO10; connect MOSI to MISO for loopback or use a readable 3.3 V SPI device.
+2. **TFT TX fixture:** SCLK GPIO12, MOSI GPIO11, CS GPIO10, DC GPIO9, reset GPIO8, and the confirmed backlight connection. This fixture has no MISO. GPIO8 conflicts with the D1 digital-sensor allocation and GPIO13 was used as TFT backlight in the standalone experiment, so do not run those conflicting devices simultaneously.
 
-### Brendan — shared contract and integration
+- [ ] Confirm the TFT controller from a rear marking or supplier listing: ST7789P3 versus NV3023B.
+- [ ] Confirm whether the breakout backlight input is logic/PWM compatible before driving it from a GPIO.
+- [ ] Photograph and record each fixture before testing.
 
-- [ ] Own `app_cfg_t`, `proto_spi`, parser validation, defaults, `SHOW` output, scheduler summaries, registry wiring, and portable error semantics.
-- [ ] Extend `bus_t` only after agreeing source-compatibility requirements with Jy and the D1 owner.
-- [ ] Add host-side parser/registry tests and update the parity harness.
-- [ ] Keep `README.md`, `ARCHITECTURE.md`, `project_v3/README.md`, and `parity/PARITY.md` synchronized with the implemented contract.
+The TFT alone cannot prove receive integrity because it exposes no SDO/MISO acknowledgement path.
 
-### Jy — ESP32-S3 backend and hardware evidence
+## Teammate split
 
-- [ ] Own the ESP32-S3 SPI bus manager, device contexts, locking, initialization, transaction, timeout, cleanup, and error translation.
-- [ ] Confirm the physical pinout and wire the loopback/readable device and optional TFT.
-- [ ] Implement the benchmark/evidence logger and capture hardware results.
-- [ ] Record Arduino-ESP32/ESP-IDF APIs used, DMA constraints, heap behavior, and any limitations.
+Keep one owner per active file to reduce conflicts.
 
-### Pair work
+### Brendan — shared contract, parser, scheduler, and integration
 
-- [ ] Review the configuration schema and error model before implementation.
-- [ ] Review every boundary-crossing change together.
-- [ ] Run the final hardware demo and complete the evidence table together.
-- [ ] Do not merge until both teammates review the diff and reproduce the main test on the same commit.
+- [ ] Add `proto_spi` and bounded SPI configuration fields to `app_cfg_t`.
+- [ ] Add parser defaults, parsing, validation, `SHOW`, and scheduler SPI summary.
+- [ ] Extend `bus_t` lifecycle semantics and update existing drivers without changing their behaviour.
+- [ ] Add `bus_spi` to the common registry and update Pico/S3 build manifests.
+- [ ] Extend parity tests and keep README, architecture, configuration, and requirements synchronized.
 
-## Phase 1 — freeze the SPI contract
+### Jy — ESP32-S3 transport, fixtures, and evidence
 
-- [ ] Confirm the target proof devices: MOSI-to-MISO loopback or readable SPI memory for RX integrity, plus the TFT or another real device for application-level TX proof.
-- [ ] Confirm the exact ESP32-S3 module marking, available host, flash/PSRAM wiring, and safe GPIOs.
-- [ ] Agree whether `bus_t` gains `transceive` and `deinit` callbacks or whether an equivalent versioned extension is used.
-- [ ] Define one error enum for invalid configuration, unsupported operation, conflict/busy, timeout, I/O failure, verification failure, no memory, and device-not-present.
-- [ ] Define byte-operation returns: positive valid RX byte count, zero successful TX-only operation, negative typed error.
-- [ ] Decide whether the first release supports polling only. If streaming is deferred, return `unsupported` rather than silently pretending it started.
-- [ ] Obtain team sign-off for proposed requirements FR-16, FR-17, and NFR-08 plus tests T-17 to T-23 in `parity/PARITY.md`.
+- [ ] Implement the EdgeS3 SPI host/device manager, locking, transactions, timeout/error translation, and cleanup.
+- [ ] Build the loopback/readable-device fixture and the separate TFT/real-device fixture.
+- [ ] Implement the 8–1024-byte benchmark/test path using the same platform transaction code as `bus_spi`.
+- [ ] Capture raw logs, heap measurements, build sizes, photos/video, and hardware metadata.
 
-Proposed minimum configuration:
+### Pair gates
+
+- [ ] Approve the configuration schema, error values, scheduled transfer limit, and backend choice before coding.
+- [ ] Review `bus_t`, HAL, and scheduler lifecycle changes together.
+- [ ] Reproduce the main loopback test on the same commit before merge.
+
+## Phase 1 — freeze the minimum contract
+
+- [ ] Use `fspi` as the canonical ESP32-S3 host name; optionally accept `spi2` as a documented alias.
+- [ ] First release supports poll mode only. Reject `mode=stream` for SPI with `unsupported` until queued streaming is deliberately implemented.
+- [ ] Define shared negative error codes for invalid configuration, unsupported operation, conflict/busy, timeout, I/O failure, verification failure, no memory, and absent device.
+- [ ] Define `poll_once()` semantics: positive RX byte count publishes data; zero is successful TX-only with no published sample; negative is an explicit error.
+- [ ] Set normal scheduled limits (recommended `spi.tx_len <= 64`, `spi.read_len <= 128`) to match parser and scheduler constraints.
+- [ ] Keep the 1024-byte benchmark outside normal publishing so console/MQTT line limits and EngineTask stack are not silently exceeded.
+- [ ] Obtain team sign-off for FR-16, FR-17, NFR-08, and T-17 to T-23 before final merge.
+
+Minimum configuration:
 
 ```ini
-BEGINCFG|name=SPI_LOOP|proto=spi|mode=poll|freq_hz=2|spi.host=spi2|spi.sclk=12|spi.mosi=11|spi.miso=13|spi.cs=10|spi.hz=10000000|spi.mode=0|spi.tx=0xA5 0x5A|spi.read_len=2|spi.timeout_ms=100|ENDCFG
+BEGINCFG|name=SPI_LOOP|proto=spi|mode=poll|freq_hz=2|spi.host=fspi|spi.sclk=12|spi.mosi=11|spi.miso=13|spi.cs=10|spi.hz=10000000|spi.mode=0|spi.tx=0xA5 0x5A|spi.read_len=2|spi.timeout_ms=100|ENDCFG
 ```
 
-Required validation:
+Validation checklist:
 
-- [ ] Supported host value.
-- [ ] SPI mode is 0–3.
-- [ ] Clock is positive and within the agreed hardware/backend limit.
-- [ ] Pins are valid, available, unique where required, and compatible with the confirmed board layout.
-- [ ] MISO is present whenever receive bytes are requested.
-- [ ] CS is valid, or an explicit no-CS mode is documented.
-- [ ] TX and RX lengths fit configured and backend limits.
-- [ ] Timeout and queue/depth values are bounded.
-- [ ] A proposed shared bus matches the existing host and bus-pin configuration.
+- [ ] Host is supported.
+- [ ] Mode is 0–3 and transfer bit order is explicitly fixed/documented.
+- [ ] Clock is within an approved minimum/maximum.
+- [ ] Pins pass `hal_gpio_valid()`, are not reserved, and are unique where required.
+- [ ] MISO is configured whenever RX bytes are requested.
+- [ ] CS is valid; no-CS operation is rejected unless deliberately added.
+- [ ] TX/RX lengths and timeout are bounded.
+- [ ] A device joining an existing host matches its SCLK/MOSI/MISO configuration.
+- [ ] TFT-only fields never enter the generic transport configuration.
 
-## Phase 2 — extend the shared configuration and registry
+## Phase 2 — shared EdgeCore changes
 
-- [ ] Add `proto_spi` without changing existing enum meanings unexpectedly.
-- [ ] Add bounded SPI fields to `app_cfg_t`; avoid storing pointers into temporary parser buffers.
-- [ ] Parse all agreed `spi.*` keys, including hexadecimal and decimal TX bytes.
-- [ ] Fix unknown `proto=` handling so it returns an error instead of falling through to another protocol (D1 defect D-01).
-- [ ] Add configuration validation before `scheduler_add_config()` commits a slot.
-- [ ] Add SPI to `proto_name()`, `bus_if.h`, and the `bus_if.c` registry.
-- [ ] Add an SPI-specific scheduler summary that prints host, pins, clock, mode, TX length, RX length, and timeout.
-- [ ] Ensure `SHOW` reports the active SPI configuration without exposing stale/uninitialized fields.
-- [ ] Add cleanup on `CLEAR`, failed initialization, and replacement/reconfiguration.
-- [ ] Update build manifests for each supported target without duplicating source files.
+- [ ] Add `proto_spi` without renumbering existing protocol values.
+- [ ] Add fixed-size SPI fields and defaults to `app_cfg_t` and `repl_init_defaults()`.
+- [ ] Parse all agreed `spi.*` keys and detect malformed, truncated, or excessive byte lists.
+- [ ] Perform complete SPI validation in `cfg_parse_end()` before `scheduler_add_config()` changes hardware.
+- [ ] Replace the scheduler's default-to-GPIO `proto_name()` logic with an exhaustive mapping that can return `NULL` for invalid values.
+- [ ] Add `deinit` to `bus_t`, update all existing drivers, and correct scheduler cleanup/rollback.
+- [ ] Add `bus_spi` to `bus_if.h`, `bus_if.c`, and new `bus/spi.c`.
+- [ ] Add a SPI-specific scheduler summary and make `SHOW` display all active SPI settings safely.
+- [ ] Add new shared sources to root `CMakeLists.txt` so the Pico build continues compiling the identical EdgeCore code.
 
-## Phase 3 — implement the ESP32-S3 transport
+## Phase 3 — HAL and ESP32-S3 backend
 
-- [ ] Implement one shared-bus record per host/bus-pin combination and one device context per CS line.
-- [ ] Initialize the physical bus once and reference-count attached devices.
-- [ ] Reject incompatible re-use of an initialized host instead of reconfiguring it underneath an active device.
-- [ ] Serialize transactions on a shared host using the Task 13 ownership/locking design.
-- [ ] Configure host, pins, CS, frequency, mode, duplex, queue depth, timeout, and maximum transfer size from the validated runtime configuration.
-- [ ] Implement transmit-only, receive, and full-duplex transaction paths.
-- [ ] Translate every Arduino/ESP-IDF result into the common error model.
-- [ ] Ensure RX buffers are published only when the transaction succeeds and the returned length is valid.
-- [ ] Remove devices and free the bus only after the final user releases it.
-- [ ] Make repeated initialize/deinitialize cycles leak-free.
-- [ ] Document DMA-capable buffer/alignment rules and use a bounded allocation strategy.
+- [ ] Define portable SPI open/transfer/close calls and typed errors in `libraries/EdgeCore/src/hal/hal.h`.
+- [ ] Add Pico stubs in `project_v3/platform/pico/hal_pico.c` that return `HAL_ERR_UNSUPPORTED`; D2 has no Pico hardware requirement, but the shared build must still link.
+- [ ] Implement the S3 backend under EdgeS3 using Arduino `SPIClass` first.
+- [ ] Use direct ESP-IDF `spi_master` only if measured requirements for timeout, sharing, queueing, DMA, or errors cannot be satisfied through `SPIClass`; document the evidence and exception.
+- [ ] Maintain one host record per bus/pin combination and one device record per CS/frequency/mode.
+- [ ] Serialize transactions because EngineTask is the normal owner, while the dedicated benchmark must not race it.
+- [ ] Reject incompatible host reuse instead of silently reconfiguring an active bus.
+- [ ] Publish RX data only after a complete successful transfer.
+- [ ] Release device, lock, and host resources after the final reference closes.
+- [ ] Record DMA, alignment, maximum transfer, heap, and clock limitations.
 
-## Phase 4 — functional proof
+## Phase 4 — automated functional and fault tests
 
-- [ ] Registry proof: show `proto=spi` resolving to `bus_spi` through normal configuration and scheduler flow.
-- [ ] Loopback/readable-device proof: transmit deterministic bytes and compare every returned byte.
-- [ ] TX proof: initialize the TFT or chosen SPI peripheral through the same transport and produce a deterministic visible/result pattern.
-- [ ] Multi-device proof: attach two CS devices to one compatible bus, or document why the available hardware prevents the test.
-- [ ] Runtime reconfiguration proof: change an allowed device setting and continue operating.
-- [ ] Rollback proof: attempt an invalid/incompatible reconfiguration and show the previous device remains usable.
-- [ ] Concurrent proof: run SPI while at least one existing I2C/GPIO workload is active; repeat with ML inference when D4 integration is ready.
+- [ ] Add `parity/spi_test.py` and a `sh tools/s3.sh spi` entry point.
+- [ ] T-17: configure SPI through the REPL, confirm `CFG: ok`, `SHOW`, scheduler summary, and `bus_spi` execution.
+- [ ] T-18: validate host/pin/clock/mode changes, compatible bus sharing, and incompatible reuse refusal.
+- [ ] T-19: verify deterministic loopback/readable-device payloads at 8, 16, 32, 64, 128, 256, 512, and 1024 bytes.
+- [ ] T-20: operate the confirmed TFT or another real SPI device through the generic transport plus its device layer.
+- [ ] T-21: reject invalid host, mode, clock, reserved/duplicate/conflicting pins, missing MISO, excessive lengths, timeout, and disconnected/absent device; publish no valid sample.
+- [ ] T-22: run 100 initialize/deinitialize cycles with no progressive heap loss; failed reconfiguration must leave an existing device usable.
+- [ ] T-23: benchmark and run SPI concurrently with D1 GPIO/I2C plus inference, with no reset or unexplained corruption.
+- [ ] Add deliberate mismatch/corruption detection to the loopback test rather than treating received zeros as success.
 
-## Phase 5 — negative and fault tests
+## Phase 5 — benchmark and retained evidence
 
-- [ ] Invalid/unknown host is rejected.
-- [ ] Modes below 0 or above 3 are rejected.
-- [ ] Zero, negative, or excessive clock is rejected.
-- [ ] Invalid, reserved, duplicated, or conflicting pins are rejected.
-- [ ] Receive request with MISO disabled is rejected.
-- [ ] Oversized TX/RX request is rejected.
-- [ ] Disconnected loopback or absent device reports an error/verification failure, not zero-filled valid data.
-- [ ] Timeout and queue/bus-busy paths return distinct errors.
-- [ ] Deliberate byte corruption is detected.
-- [ ] Failed initialization and failed reconfiguration release partial resources.
-- [ ] One hundred initialize/deinitialize cycles show no progressive heap loss.
-- [ ] Sustained operation produces no watchdog reset or unexplained sample loss.
-
-## Phase 6 — benchmark and retained evidence
-
-- [ ] Measure payload sizes 8, 16, 32, 64, 128, 256, 512, and 1024 bytes.
-- [ ] Perform at least 10 warm-ups and 1,000 measured transactions per selected payload/clock combination.
-- [ ] Record median, p95, p99, and maximum latency.
-- [ ] Record effective payload throughput.
+- [ ] Run at least 10 warm-ups and 1,000 measured transactions for selected payload/clock combinations.
+- [ ] Record median, p95, p99, maximum latency, and effective payload throughput.
 - [ ] Record attempts, platform errors, timeouts, mismatched transactions, mismatched bytes, resets, and heap before/after.
 - [ ] Report transaction error rate and byte error rate separately.
-- [ ] Retain CSV/raw logs plus a short Markdown result summary under `parity/logs/d2-spi/`.
-- [ ] Include commit, board/module, Arduino IDE/core, underlying ESP-IDF version, CPU frequency, host, pins, mode, clock, DMA/transaction method, tester, and date.
+- [ ] Store raw/CSV logs and a concise result summary under `parity/logs/d2-spi/`.
+- [ ] Record commit, ESP32-S3FH4R2/HW-747 board, Arduino CLI/IDE, core 3.3.12, ESP-IDF version, FQBN, CPU frequency, host, pins, mode, clock, backend, tester, and date.
 
-## Phase 7 — regression, documentation, and merge gate
+## Phase 6 — exact D1 regression gate
 
-- [ ] Run the D1 HAL boundary checker.
-- [ ] Rebuild the frozen Pico reference and confirm D2 shared changes do not break it.
-- [ ] Build the ESP32-S3 target using the pinned Task 7 environment.
-- [ ] Run existing REPL/configuration/scheduler tests and the new SPI tests.
-- [ ] Update `README.md`, `ARCHITECTURE.md`, `project_v3/README.md`, `SETUP.md`, and `parity/PARITY.md` with actual—not planned—settings and evidence.
-- [ ] List all direct ESP-IDF calls and why Arduino SPI APIs were insufficient.
-- [ ] Document unsupported modes/devices and any approved deviations.
-- [ ] Review the final diff together and remove generated files, credentials, and local build output.
-- [ ] Merge only when the Definition of done is satisfied and evidence links resolve from a clean checkout.
+- [ ] Run `sh tools/check_hal_boundary.sh`.
+- [ ] Run `sh tools/s3.sh check` to compile the bring-up and production sketches with the pinned environment.
+- [ ] Rebuild the Pico target from the shared sources; `bus_spi` must link through unsupported Pico HAL stubs.
+- [ ] Run `sh tools/s3.sh haltest`.
+- [ ] Run S3 stages `4a`, `4b`, `4c-mag`, `4c-uart`, and `5-neg`.
+- [ ] Run the new `sh tools/s3.sh spi` suite.
+- [ ] Run inference while SPI traffic is active and record task stack high-water marks and heap.
+- [ ] Re-run MQTT/fault/endurance tests if scheduler buffers, publisher behaviour, task timing, or memory use changed.
+- [ ] Compare new D1 results with retained logs under `parity/logs/s3/`; explain every difference.
 
-## Final demonstration
+## Phase 7 — documentation and merge gate
 
-1. Boot the ESP32-S3 and show the pinned build/tool versions.
-2. Submit the SPI configuration through the same REPL/configuration path as I2C/UART/GPIO.
-3. Show the scheduler registering `SPI_LOOP` on `spi` through the common registry.
-4. Run a known-pattern transaction and show the exact returned bytes.
-5. Inject one invalid configuration and one disconnected/verification failure; show both are explicit errors and no sample is published.
-6. Run the real SPI device/TFT proof.
-7. Present the 8–1024-byte benchmark summary and error counts.
-8. Run the regression smoke test and identify the tested commit and retained evidence.
+- [ ] Replace proposed D2 settings with the implemented schema and measured limits in all documentation.
+- [ ] Fill the ESP32-S3 result/evidence columns for FR-16, FR-17, NFR-08, and T-17 to T-23.
+- [ ] Update the final SPI pins without presenting the mutually exclusive loopback and TFT fixtures as simultaneous wiring.
+- [ ] Document the confirmed TFT controller and the fact that TFT success proves TX only.
+- [ ] List every direct ESP-IDF call and justify why Arduino SPI was insufficient, or record that no new exception was required.
+- [ ] Review the final diff together and remove credentials, generated binaries, and local build output.
+- [ ] Merge only when all Definition of done items pass and every evidence link resolves from a clean checkout.
 
-## Open decisions
+## Fastest safe execution order
 
-- [ ] Exact SPI proof device and whether the TFT exposes MISO.
-- [ ] Final safe SCLK/MOSI/MISO/CS pins after Task 8 is closed.
-- [ ] Arduino `SPIClass` only versus a documented ESP-IDF `spi_master` backend.
-- [ ] Whether `bus_t` can change directly or requires a backward-compatible extension.
-- [ ] Approved maximum SPI clock and numeric performance thresholds.
-- [ ] Whether streaming/queued transactions are in D2 scope or explicitly deferred.
+1. Freeze the scheduled size limits, error enum, host name, and backend choice.
+2. Add `bus_t.deinit` and scheduler cleanup first; run D1 regressions immediately.
+3. Add config fields/parser/validation and registry wiring; test invalid configurations before hardware work.
+4. Add HAL calls, Pico unsupported stubs, and the EdgeS3 SPI backend.
+5. Prove 2-byte and 128-byte MOSI↔MISO loopback through the REPL/scheduler.
+6. Add the dedicated 8–1024-byte integrity/benchmark harness.
+7. Add the confirmed TFT/real-device layer and TX proof.
+8. Run fault, lifecycle, concurrency, and full D1 regression gates.
+9. Fill evidence and documentation, review together, then merge.
 
+## Remaining decisions before coding
+
+- [ ] Confirm the RX proof: jumper loopback versus a readable SPI device.
+- [ ] Confirm the TFT controller and backlight electrical behaviour.
+- [ ] Approve normal scheduled TX/RX limits and keep the 1024-byte benchmark path separate.
+- [ ] Approve `SPIClass` as the first backend and the evidence threshold for falling back to ESP-IDF.
+- [ ] Approve maximum SPI clock and numerical performance thresholds.
+- [ ] Confirm that queued/streaming SPI is deferred from D2.
