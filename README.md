@@ -6,7 +6,7 @@ Branch `s3-port-d2`, based on the completed D1 `s3-port` branch. This is the Pic
 
 Brendan and Jy are extending the D1 port with SPI as a first-class runtime-configurable interface behind the existing `bus_t` abstraction and bus registry. Application code must reach an SPI device through the same path as GPIO, UART, and I2C while runtime configuration selects the bus/host, SCLK, MOSI, MISO, CS, clock, and SPI mode. Transmit and receive failures must be explicit and must never produce valid-looking samples.
 
-The implementation sequence, teammate split, acceptance criteria, hardware proof, benchmarks, and merge gate are in [D2_SPI_TODO.md](D2_SPI_TODO.md). Proposed D2 requirement and test IDs are recorded in [parity/PARITY.md](parity/PARITY.md) for team sign-off. Until those checklist items pass, SPI references describe planned D2 behaviour rather than an implemented feature.
+The shared driver, validated runtime schema, ESP32-S3 `SPIClass` backend, Pico compatibility stubs, safe lifecycle, and automated loopback suite are now implemented on `s3-port-d2`. On 2026-10-16, `sh tools/s3.sh spi` passed 22/22 with modes 0–3, exact 2-byte and 128-byte loopback, bus sharing/conflict checks, negative cases, 100 open/clear cycles, and stable heap (95,748 B before and after). D1 regressions also passed (`4a` 14/14 and `5-neg` 27/27). The dedicated 8–1024-byte benchmark and TFT proof remain open; see [D2_SPI_TODO.md](D2_SPI_TODO.md).
 
 
 ## Contents

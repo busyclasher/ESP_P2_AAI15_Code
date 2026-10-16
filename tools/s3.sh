@@ -10,6 +10,7 @@
 #   sh tools/s3.sh test <stage>      run a parity stage on the S3, e.g. 4a, 4b, 5-neg
 #   sh tools/s3.sh mqtt <broker-ip>  run the 27-step MQTT test (node s3-001)
 #   sh tools/s3.sh haltest           flash the HAL test sketch and run it
+#   sh tools/s3.sh spi               run the D2 SPI validation and loopback suite
 #   sh tools/s3.sh model <broker-ip>     model upload, bad uploads, reboot (task 20)
 #   sh tools/s3.sh faults <broker-ip>    malformed/oversized input, Wi-Fi and broker loss
 #   sh tools/s3.sh flood <broker-ip>     MQTT queue saturation
@@ -63,6 +64,7 @@ case "$1" in
   mqtt)    need_port; [ -n "$2" ] || { echo "usage: sh tools/s3.sh mqtt <broker-ip>"; exit 1; }
            $PY parity/mqtt_test.py --broker "$2" --node "${NODE:-s3-001}" --board s3 --port "$PORT" ;;
   haltest) build esp32s3_haltest && upload esp32s3_haltest && $PY parity/hal_test.py --port "$PORT" ;;
+  spi)     need_port; $PY parity/spi_test.py --port "$PORT" ;;
   model|faults|flood|endurance)
            need_port; [ -n "$2" ] || { echo "usage: sh tools/s3.sh $1 <broker-ip>"; exit 1; }
            case "$1" in

@@ -214,3 +214,25 @@ int hal_uart_read_byte(int port) {
     uart_inst_t *u = uart_for(port);
     return uart_is_readable(u) ? (int)uart_getc(u) : HAL_ERR_TIMEOUT;
 }
+
+// ---------- SPI ----------
+// D2 is an ESP32-S3 extension. Keep the shared EdgeCore build linkable on the
+// Pico while reporting the platform limitation explicitly at runtime.
+
+int hal_spi_open(const char *host, int sclk, int mosi, int miso, int cs,
+                 uint32_t hz, uint8_t mode) {
+    (void)host; (void)sclk; (void)mosi; (void)miso; (void)cs;
+    (void)hz; (void)mode;
+    return HAL_ERR_UNSUPPORTED;
+}
+
+int hal_spi_transfer(int device, const uint8_t *tx, uint8_t *rx, size_t len,
+                     uint32_t timeout_ms) {
+    (void)device; (void)tx; (void)rx; (void)len; (void)timeout_ms;
+    return HAL_ERR_UNSUPPORTED;
+}
+
+int hal_spi_close(int device) {
+    (void)device;
+    return HAL_ERR_UNSUPPORTED;
+}

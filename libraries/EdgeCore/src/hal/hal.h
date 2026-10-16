@@ -33,6 +33,11 @@ extern "C" {
 #define HAL_ERR_PIN         (-2)  // pin does not exist or is reserved on this board
 #define HAL_ERR_UNSUPPORTED (-3)  // operation not available on this target
 #define HAL_ERR_IO          (-4)  // the bus device did not respond
+#define HAL_ERR_INVALID     (-5)  // malformed or out-of-range configuration
+#define HAL_ERR_BUSY        (-6)  // resource exists with incompatible settings
+#define HAL_ERR_VERIFY      (-7)  // received bytes did not match the expected data
+#define HAL_ERR_NO_MEMORY   (-8)  // context, slot, or platform allocation failed
+#define HAL_ERR_ABSENT      (-9)  // device is known to be absent
 
 // ---------- time ----------
 
@@ -141,6 +146,22 @@ int hal_uart_write(int port, const uint8_t *data, size_t len);
 // Next received byte (0..255), or HAL_ERR_TIMEOUT if none is waiting.
 // Never blocks.
 int hal_uart_read_byte(int port);
+
+// ---------- SPI (used by bus/spi.c) ----------
+
+// Opens one chip-select device on a named SPI host. Devices may share a host
+// only when SCLK/MOSI/MISO match. The transfer order is fixed to MSB-first.
+// Returns a device handle (>= 0), or a negative HAL_ERR_* code.
+int hal_spi_open(const char *host, int sclk, int mosi, int miso, int cs,
+                 uint32_t hz, uint8_t mode);
+
+// Performs one full-duplex transaction while CS is asserted. tx may be NULL
+// to send zero fill; rx may be NULL for TX-only. Returns len or HAL_ERR_*.
+int hal_spi_transfer(int device, const uint8_t *tx, uint8_t *rx, size_t len,
+                     uint32_t timeout_ms);
+
+// Releases one device reference and the physical host after its final user.
+int hal_spi_close(int device);
 
 #ifdef __cplusplus
 }

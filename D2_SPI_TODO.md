@@ -3,7 +3,7 @@
 - Branch: `s3-port-d2`
 - Updated baseline: D1 `s3-port` at `ba81f18`, merged into D2 by `9a421ef`
 - Team: Brendan and Jy
-- Status: ready for implementation
+- Status: implementation in progress; core SPI path and loopback verified 2026-10-16
 
 ## End outcome
 
@@ -43,25 +43,25 @@ Task 7 still requires every teammate to run the environment check, and D1 releas
 
 ## Critical design corrections from the completed D1 code
 
-- [ ] Add an explicit `deinit(void *ctx)` callback to `bus_t`. `scheduler_reset()` currently calls `free(ctx)` directly, which cannot release an SPI device, shared bus reference, lock, or platform handle safely.
-- [ ] Update GPIO, I2C, and UART `bus_t` initializers with a compatible `deinit` entry (`NULL` where plain `free()` remains sufficient).
-- [ ] Make `scheduler_reset()` stop streaming, call `bus->deinit(ctx)` when present, and only use `free(ctx)` as the compatibility fallback.
-- [ ] On `init_cfg()` failure, clean up any partially returned context before releasing the scheduler slot.
-- [ ] Add `proto_spi` explicitly to `proto_name()`. The current ternary mapping defaults every unrecognised enum to `gpio`, which is unsafe for future protocols.
-- [ ] Do not put a 1024-byte automatic buffer on EngineTask's stack. The current scheduler sample buffer is 128 bytes and D1 recorded task stack headroom. Keep normal scheduled SPI samples bounded (recommended: 128 bytes) and run 8–1024-byte integrity/performance measurements through a dedicated test path using the same HAL/backend transaction implementation.
-- [ ] Keep configured TX bytes in a bounded array inside `app_cfg_t`; never retain pointers into the parser's temporary 160/256-byte buffers.
+- [x] Add an explicit `deinit(void *ctx)` callback to `bus_t`. `scheduler_reset()` previously called `free(ctx)` directly, which could not release an SPI device, shared bus reference, lock, or platform handle safely.
+- [x] Update GPIO, I2C, and UART `bus_t` initializers with compatible `deinit` entries.
+- [x] Make `scheduler_reset()` stop streaming, call `bus->deinit(ctx)` when present, and only use `free(ctx)` as the compatibility fallback.
+- [x] On `init_cfg()` failure, clean up any partially returned context before releasing the scheduler slot.
+- [x] Add `proto_spi` explicitly to `proto_name()` and return `NULL` for an invalid enum.
+- [x] Keep the scheduler buffer at 128 bytes; reserve 8–1024-byte measurements for the dedicated benchmark path.
+- [x] Keep configured TX bytes in a bounded 64-byte array inside `app_cfg_t`; no parser-buffer pointers are retained.
 - [ ] Treat TFT commands, offsets, rotation, colour order, inversion, and controller initialization as a device driver above the generic SPI transport.
 
 ## Definition of done
 
-- [ ] `proto=spi` is parsed, validated, displayed by `SHOW`, scheduled, and resolved through `bus_lookup("spi")`.
-- [ ] Runtime configuration supports host, SCLK, MOSI, optional MISO, CS, clock, mode, bounded TX bytes, bounded scheduled RX length, and timeout.
-- [ ] Invalid settings are rejected before hardware state changes.
-- [ ] The generic EdgeCore driver uses only the HAL contract; Arduino/ESP-IDF headers remain below the platform boundary.
-- [ ] Compatible devices share one physical SPI host safely; incompatible host/pin reuse returns a clear conflict.
-- [ ] `CLEAR`, failed initialization, and repeated reconfiguration release all contexts and platform resources.
-- [ ] TX-only and TX/RX paths have explicit success and typed error semantics.
-- [ ] MOSI-to-MISO loopback or a readable device proves byte-for-byte RX integrity.
+- [x] `proto=spi` is parsed, validated, displayed by `SHOW`, scheduled, and resolved through `bus_lookup("spi")`.
+- [x] Runtime configuration supports host, SCLK, MOSI, optional MISO, CS, clock, mode, bounded TX bytes, bounded scheduled RX length, and timeout.
+- [x] Invalid settings are rejected before hardware state changes.
+- [x] The generic EdgeCore driver uses only the HAL contract; Arduino/ESP-IDF headers remain below the platform boundary.
+- [x] Compatible devices share one physical SPI host safely; incompatible host/pin reuse returns a clear conflict.
+- [x] `CLEAR`, failed initialization, and 100 repeated reconfigurations release contexts and host/device references with no progressive heap loss.
+- [x] TX-only and TX/RX paths have explicit success and typed error semantics.
+- [x] GPIO11 MOSI-to-GPIO13 MISO loopback proves byte-for-byte RX integrity for 2-byte and 128-byte scheduled transfers in modes 0–3.
 - [ ] A TFT or another real SPI device proves useful TX operation through the same transport layer.
 - [ ] Payloads from 8 through 1024 bytes have retained latency, throughput, timeout/error, and mismatch results.
 - [ ] D1 boundary, Pico build, S3 build, HAL, REPL, negative, sensor, inference, and concurrency regressions pass.
@@ -109,12 +109,12 @@ Keep one owner per active file to reduce conflicts.
 
 ## Phase 1 — freeze the minimum contract
 
-- [ ] Use `fspi` as the canonical ESP32-S3 host name; optionally accept `spi2` as a documented alias.
-- [ ] First release supports poll mode only. Reject `mode=stream` for SPI with `unsupported` until queued streaming is deliberately implemented.
-- [ ] Define shared negative error codes for invalid configuration, unsupported operation, conflict/busy, timeout, I/O failure, verification failure, no memory, and absent device.
-- [ ] Define `poll_once()` semantics: positive RX byte count publishes data; zero is successful TX-only with no published sample; negative is an explicit error.
-- [ ] Set normal scheduled limits (recommended `spi.tx_len <= 64`, `spi.read_len <= 128`) to match parser and scheduler constraints.
-- [ ] Keep the 1024-byte benchmark outside normal publishing so console/MQTT line limits and EngineTask stack are not silently exceeded.
+- [x] Use `fspi` as the canonical ESP32-S3 host name; accept `spi2` as a normalized alias.
+- [x] First release supports poll mode only. Reject `mode=stream` for SPI with `unsupported` until queued streaming is deliberately implemented.
+- [x] Define shared negative error codes for invalid configuration, unsupported operation, conflict/busy, timeout, I/O failure, verification failure, no memory, and absent device.
+- [x] Define `poll_once()` semantics: positive RX byte count publishes data; zero is successful TX-only with no published sample; negative is an explicit error.
+- [x] Set normal scheduled limits to `spi.tx_len <= 64` and `spi.read_len <= 128`.
+- [x] Keep the 1024-byte benchmark outside normal publishing so console/MQTT line limits and EngineTask stack are not silently exceeded.
 - [ ] Obtain team sign-off for FR-16, FR-17, NFR-08, and T-17 to T-23 before final merge.
 
 Minimum configuration:
@@ -137,40 +137,40 @@ Validation checklist:
 
 ## Phase 2 — shared EdgeCore changes
 
-- [ ] Add `proto_spi` without renumbering existing protocol values.
-- [ ] Add fixed-size SPI fields and defaults to `app_cfg_t` and `repl_init_defaults()`.
-- [ ] Parse all agreed `spi.*` keys and detect malformed, truncated, or excessive byte lists.
-- [ ] Perform complete SPI validation in `cfg_parse_end()` before `scheduler_add_config()` changes hardware.
-- [ ] Replace the scheduler's default-to-GPIO `proto_name()` logic with an exhaustive mapping that can return `NULL` for invalid values.
-- [ ] Add `deinit` to `bus_t`, update all existing drivers, and correct scheduler cleanup/rollback.
-- [ ] Add `bus_spi` to `bus_if.h`, `bus_if.c`, and new `bus/spi.c`.
-- [ ] Add a SPI-specific scheduler summary and make `SHOW` display all active SPI settings safely.
-- [ ] Add new shared sources to root `CMakeLists.txt` so the Pico build continues compiling the identical EdgeCore code.
+- [x] Add `proto_spi` without renumbering existing protocol values.
+- [x] Add fixed-size SPI fields and defaults to `app_cfg_t` and `repl_init_defaults()`.
+- [x] Parse all agreed `spi.*` keys and detect malformed, truncated, or excessive byte lists.
+- [x] Perform complete SPI validation in `cfg_parse_end()` before `scheduler_add_config()` changes hardware.
+- [x] Replace the scheduler's default-to-GPIO `proto_name()` logic with an exhaustive mapping that can return `NULL` for invalid values.
+- [x] Add `deinit` to `bus_t`, update all existing drivers, and correct scheduler cleanup/rollback.
+- [x] Add `bus_spi` to `bus_if.h`, `bus_if.c`, and new `bus/spi.c`.
+- [x] Add a SPI-specific scheduler summary and make `SHOW` display all active SPI settings safely.
+- [x] Add the new shared source to root `CMakeLists.txt`; the Pico backend supplies unsupported stubs.
 
 ## Phase 3 — HAL and ESP32-S3 backend
 
-- [ ] Define portable SPI open/transfer/close calls and typed errors in `libraries/EdgeCore/src/hal/hal.h`.
-- [ ] Add Pico stubs in `project_v3/platform/pico/hal_pico.c` that return `HAL_ERR_UNSUPPORTED`; D2 has no Pico hardware requirement, but the shared build must still link.
-- [ ] Implement the S3 backend under EdgeS3 using Arduino `SPIClass` first.
+- [x] Define portable SPI open/transfer/close calls and typed errors in `libraries/EdgeCore/src/hal/hal.h`.
+- [x] Add Pico stubs in `project_v3/platform/pico/hal_pico.c` that return `HAL_ERR_UNSUPPORTED`; D2 has no Pico hardware requirement.
+- [x] Implement the S3 backend under EdgeS3 using Arduino `SPIClass` first.
 - [ ] Use direct ESP-IDF `spi_master` only if measured requirements for timeout, sharing, queueing, DMA, or errors cannot be satisfied through `SPIClass`; document the evidence and exception.
-- [ ] Maintain one host record per bus/pin combination and one device record per CS/frequency/mode.
-- [ ] Serialize transactions because EngineTask is the normal owner, while the dedicated benchmark must not race it.
-- [ ] Reject incompatible host reuse instead of silently reconfiguring an active bus.
-- [ ] Publish RX data only after a complete successful transfer.
-- [ ] Release device, lock, and host resources after the final reference closes.
+- [x] Maintain one host record per bus/pin combination and one device record per CS/frequency/mode.
+- [x] Serialize transactions with a FreeRTOS mutex.
+- [x] Reject incompatible host reuse instead of silently reconfiguring an active bus.
+- [x] Publish RX data only after a complete successful transfer.
+- [x] Release device references and end the host after the final reference closes; the reusable mutex remains allocated once, with stable heap thereafter.
 - [ ] Record DMA, alignment, maximum transfer, heap, and clock limitations.
 
 ## Phase 4 — automated functional and fault tests
 
-- [ ] Add `parity/spi_test.py` and a `sh tools/s3.sh spi` entry point.
-- [ ] T-17: configure SPI through the REPL, confirm `CFG: ok`, `SHOW`, scheduler summary, and `bus_spi` execution.
-- [ ] T-18: validate host/pin/clock/mode changes, compatible bus sharing, and incompatible reuse refusal.
+- [x] Add `parity/spi_test.py` and a `sh tools/s3.sh spi` entry point.
+- [x] T-17: configure SPI through the REPL, confirm `CFG: ok`, `SHOW`, scheduler summary, and `bus_spi` execution.
+- [x] T-18: validate host/pin/clock/mode settings, compatible bus sharing, and incompatible reuse refusal.
 - [ ] T-19: verify deterministic loopback/readable-device payloads at 8, 16, 32, 64, 128, 256, 512, and 1024 bytes.
 - [ ] T-20: operate the confirmed TFT or another real SPI device through the generic transport plus its device layer.
-- [ ] T-21: reject invalid host, mode, clock, reserved/duplicate/conflicting pins, missing MISO, excessive lengths, timeout, and disconnected/absent device; publish no valid sample.
-- [ ] T-22: run 100 initialize/deinitialize cycles with no progressive heap loss; failed reconfiguration must leave an existing device usable.
+- [ ] T-21: invalid host/mode, reserved/duplicate/conflicting pins, missing MISO, excessive RX, zero timeout, and empty transfers are rejected; clock boundaries, disconnected/absent behavior, and forced transfer timeout remain to be exercised.
+- [x] T-22: 100 initialize/deinitialize cycles passed with heap 95,748 B before and after; failed incompatible reconfiguration left existing devices usable.
 - [ ] T-23: benchmark and run SPI concurrently with D1 GPIO/I2C plus inference, with no reset or unexplained corruption.
-- [ ] Add deliberate mismatch/corruption detection to the loopback test rather than treating received zeros as success.
+- [x] Add deliberate byte-for-byte mismatch detection to the loopback tests rather than treating received zeros as success.
 
 ## Phase 5 — benchmark and retained evidence
 
@@ -183,12 +183,12 @@ Validation checklist:
 
 ## Phase 6 — exact D1 regression gate
 
-- [ ] Run `sh tools/check_hal_boundary.sh`.
-- [ ] Run `sh tools/s3.sh check` to compile the bring-up and production sketches with the pinned environment.
-- [ ] Rebuild the Pico target from the shared sources; `bus_spi` must link through unsupported Pico HAL stubs.
+- [x] Run `sh tools/check_hal_boundary.sh`.
+- [x] Run `sh tools/s3.sh check` to compile the bring-up and production sketches with the pinned environment.
+- [x] Rebuild the Pico target from the shared sources; `bus_spi` compiled and `project_v3.elf` linked through unsupported Pico HAL stubs on 2026-10-16.
 - [ ] Run `sh tools/s3.sh haltest`.
 - [ ] Run S3 stages `4a`, `4b`, `4c-mag`, `4c-uart`, and `5-neg`.
-- [ ] Run the new `sh tools/s3.sh spi` suite.
+- [x] Run the new `sh tools/s3.sh spi` suite: 22/22 on 2026-10-16.
 - [ ] Run inference while SPI traffic is active and record task stack high-water marks and heap.
 - [ ] Re-run MQTT/fault/endurance tests if scheduler buffers, publisher behaviour, task timing, or memory use changed.
 - [ ] Compare new D1 results with retained logs under `parity/logs/s3/`; explain every difference.

@@ -411,8 +411,8 @@ STAGES = {
         ("clear-0", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
         # The reference accepted the next three; the expectations below are the fixes (D-01, D-02).
         ("neg-proto", "An unsupported protocol is refused (D-01 fixed)",
-         "BEGINCFG|name=BADP|proto=spi|mode=poll|freq_hz=1|ENDCFG",
-         2.5, [r"config BADP refused: unsupported proto 'spi'", r"^CFG: add failed \(-5\)"]),
+         "BEGINCFG|name=BADP|proto=bogus|mode=poll|freq_hz=1|ENDCFG",
+         2.5, [r"config BADP refused: unsupported proto 'bogus'", r"^CFG: add failed \(-5\)"]),
         ("neg-i2c-nodev", "An I2C device that does not answer is rejected",
          "BEGINCFG|name=NODEV|proto=i2c|mode=poll|freq_hz=1|i2c.sda=16|i2c.scl=17|i2c.addr=0x29"
          "|i2c.pre=0x80 0x03|i2c.reg=0x8A|i2c.reg_size=1|i2c.read_len=1|i2c.restart=1|ENDCFG",

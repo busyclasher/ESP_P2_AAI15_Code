@@ -24,5 +24,6 @@ const bus_t *bus_lookup(const char *name);
 extern const bus_t bus_i2c;
 extern const bus_t bus_uart;
 extern const bus_t bus_gpio;
+extern const bus_t bus_spi;
 
 #endif

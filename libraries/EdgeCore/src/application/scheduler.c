@@ -44,7 +44,8 @@ static inline const char* proto_name(proto_t p) {
         case proto_uart: return "uart";
         case proto_gpio: return "gpio";
         case proto_mqtt: return "mqtt";
-        default:         return "unknown";
+        case proto_spi:  return "spi";
+        default:         return NULL;
     }
 }
 
@@ -77,9 +78,16 @@ void scheduler_dump(void) {
             const app_cfg_t *c = &g_sensors[i].cfg_copy;
             printf("[SCHED] #%d name=%s proto=%s mode=%s freq=%.3fHz\n",
                    i, c->name,
-                   proto_name(c->proto),
+                   proto_name(c->proto) ? proto_name(c->proto) : "unknown",
                    (c->mode==sample_mode_stream)?"stream":"poll",
                    c->freq_hz);
+            if (c->proto == proto_spi) {
+                printf("[SCHED] #%d SPI host=%s sclk=%d mosi=%d miso=%d cs=%d hz=%u mode=%u tx=%u rx=%u timeout_ms=%u\n",
+                       i, c->spi_host, c->spi_sclk, c->spi_mosi, c->spi_miso,
+                       c->spi_cs, (unsigned)c->spi_hz, (unsigned)c->spi_mode,
+                       (unsigned)c->spi_tx_len, (unsigned)c->spi_read_len,
+                       (unsigned)c->spi_timeout_ms);
+            }
         }
     }
 }
@@ -125,6 +133,11 @@ int scheduler_add_config(const app_cfg_t *cfg_in) {
             }
 
             const char *pname = proto_name(cfg_in->proto);
+            if (!pname) {
+                SLOG("add[%d]: UNKNOWN proto for %s", i, cfg_in->name);
+                S->in_use = false;
+                return -1;
+            }
             S->bus = bus_lookup(pname);
             S->next_run = hal_time_us();
 
@@ -173,6 +186,13 @@ int scheduler_add_config(const app_cfg_t *cfg_in) {
                      i, S->cfg_copy.name, pname, S->cfg_copy.freq_hz,
                      (S->cfg_copy.mode==sample_mode_stream)?"stream":"poll",
                      S->cfg_copy.uart_tx, S->cfg_copy.uart_rx, S->cfg_copy.uart_baud);
+            } else if (cfg_in->proto == proto_spi) {
+                SLOG("add[%d]: %s on %s freq=%.3fHz mode=poll SPI(host=%s,sclk=%d,mosi=%d,miso=%d,cs=%d,hz=%u,mode=%u,tx=%u,rx=%u,timeout=%ums)",
+                     i, S->cfg_copy.name, pname, S->cfg_copy.freq_hz,
+                     S->cfg_copy.spi_host, S->cfg_copy.spi_sclk, S->cfg_copy.spi_mosi,
+                     S->cfg_copy.spi_miso, S->cfg_copy.spi_cs, (unsigned)S->cfg_copy.spi_hz,
+                     (unsigned)S->cfg_copy.spi_mode, (unsigned)S->cfg_copy.spi_tx_len,
+                     (unsigned)S->cfg_copy.spi_read_len, (unsigned)S->cfg_copy.spi_timeout_ms);
             } else {
                 SLOG("add[%d]: %s on %s freq=%.3fHz mode=%s method=%s GPIO(pin=%d)",
                      i, S->cfg_copy.name, pname, S->cfg_copy.freq_hz,
