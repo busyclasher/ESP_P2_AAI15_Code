@@ -29,8 +29,8 @@ D2 additions FR-16, FR-17, NFR-08 and T-17 to T-23 are proposed by Brendan and J
 | FR-13 | Remote rule actions (`cmd.to`, `cfg.to`) and sensor bridging work between nodes | A rule on one node changes the state of another | P-28 | Pico: Hasif. S3: task 19 | `mqtt.log`, `mqtt-cfgto-receive.log`; fails in the reference (D-10, D-11) |
 | FR-14 | A model uploaded with `send_model.py` is stored and loaded without rebuilding firmware | Upload completes and `infer.run` uses the new model | P-29 | Pico: Hasif. S3: task 20 | `mqtt.log` |
 | FR-15 | Capacity is at least 8 sensors and 4 rules | The ninth sensor and fifth rule are refused with a message | N-04, N-06 | Pico: Hasif. S3: tasks 14, 18 | `5-neg.log` |
-| FR-16 (D2 proposed) | SPI is a supported protocol behind the common bus registry and runtime configuration path | `proto=spi` resolves to `bus_spi`; host, SCLK, MOSI, MISO, CS, frequency, mode, TX/RX sizes and timeout are validated and shown; a known-pattern transaction returns the expected bytes | T-17 to T-20 | S3: Brendan and Jy | Pending D2 hardware evidence |
-| FR-17 (D2 proposed) | SPI transaction and lifecycle failures are explicit and cannot appear as valid sensor samples | Invalid/conflicting settings, absent receive wiring/device, timeout, I/O failure, verification mismatch and failed reconfiguration return distinct errors; partial resources are released and the previous working device survives failed reconfiguration | T-21 to T-23 | S3: Brendan and Jy | Pending D2 fault evidence |
+| FR-16 (D2) | SPI is a supported protocol behind the common bus registry and runtime configuration path | `proto=spi` resolves to `bus_spi`; host, SCLK, MOSI, MISO, CS, frequency, mode, TX/RX sizes and timeout are validated and shown; a known-pattern transaction returns the expected bytes | T-17 to T-20 | S3: Brendan and Jy | T-17–19 loopback pass; W25Q32 T-20 pending. See `logs/d2-spi/RESULTS.md` |
+| FR-17 (D2) | SPI transaction and lifecycle failures are explicit and cannot appear as valid sensor samples | Invalid/conflicting settings, timeout, I/O failure, failed reconfiguration and device-verification failures return explicit errors; partial resources are released and the previous working device survives failed reconfiguration | T-21 to T-23 | S3: Brendan and Jy | Config, timeout, lock and lifecycle cases pass; removed MISO produced published raw bytes, so absent-device verification is open. See `logs/d2-spi/RESULTS.md` |
 
 ### Non-functional
 
@@ -44,7 +44,7 @@ Targets are derived from the Pico measurements and signed off by the team.
 | NFR-04 | Inference agreement | `MSE=0.4179` for input 1.0 in slot 0 | Absolute difference of at most 0.01 for the same model and input | P-23 |
 | NFR-05 | Stability | No resets or watchdog events across all runs; the board only rebooted when deliberately replugged or reflashed | Full parity suite plus an agreed continuous run with no resets | Every stage; continuous run to be agreed |
 | NFR-06 | Resource use | Code 639,852 B, zero-initialised RAM 295,424 B | Fits the module confirmed in task 8, with the headroom recorded | Build size report |
-| NFR-08 (D2 proposed) | SPI integrity and measured performance | N/A; D2 has no Pico baseline requirement | Payloads 8–1024 bytes have zero byte mismatches in the agreed loopback/readable-device run; median, p95, p99 and maximum latency, effective throughput, transaction error rate, byte error rate and heap delta are recorded; approved numerical performance thresholds are added before sign-off | T-19, T-22, T-23 |
+| NFR-08 (D2) | SPI integrity and measured performance | N/A; D2 has no Pico baseline requirement | Payloads 8–1024 bytes have zero byte mismatches in loopback; median, p95, p99 and maximum latency, effective throughput, transaction error rate, byte error rate and heap delta are recorded; approved numerical thresholds and the readable-device/concurrent run remain for sign-off | T-19, T-22, T-23; five loopback configurations and 40,000 transfers passed in `logs/d2-spi/` |
 
 ### Reference defects found
 
@@ -90,13 +90,13 @@ The README's acceptance for tasks 13 to 20 names specific fault and limit cases.
 | T-14 | 20 | An uploaded model persists across a reboot | Not yet run; the P-25 to P-29 setup can host it | |
 | T-15 | 20 | Invalid, oversized, corrupt and interrupted uploads are rejected and the previous model still works | Not yet run; the P-25 to P-29 setup can host it | |
 | T-16 | 20 | Tensor arena and heap use recorded during inference | Not yet run | |
-| T-17 | D2 | A normal `proto=spi` configuration resolves through `bus_lookup("spi")`, is shown by the scheduler, and initializes through the common driver path | N/A (D2 ESP32-S3 extension) | |
-| T-18 | D2 | Runtime host, SCLK, MOSI, MISO, CS, clock and mode changes are validated; compatible devices share a bus and incompatible re-use is rejected | N/A (D2 ESP32-S3 extension) | |
-| T-19 | D2 | Known-pattern TX/RX integrity passes for 8, 16, 32, 64, 128, 256, 512 and 1024-byte payloads | N/A (D2 ESP32-S3 extension) | |
-| T-20 | D2 | A real SPI device or TFT operates through `bus_spi` without application code bypassing the registry | N/A (D2 ESP32-S3 extension) | |
-| T-21 | D2 | Invalid host/mode/clock/pins, duplicate/conflicting pins, missing MISO for RX, oversized transfers, timeout and absent/disconnected device are explicit errors and publish no valid-looking sample | N/A (D2 ESP32-S3 extension) | |
-| T-22 | D2 | One hundred initialize/deinitialize or reconfiguration cycles have no progressive heap loss; failed reconfiguration leaves the previous device operational | N/A (D2 ESP32-S3 extension) | |
-| T-23 | D2 | SPI latency/throughput/error benchmark and concurrent SPI plus existing sensor/inference workload complete without resets or unexplained corruption | N/A (D2 ESP32-S3 extension) | |
+| T-17 | D2 | A normal `proto=spi` configuration resolves through `bus_lookup("spi")`, is shown by the scheduler, and initializes through the common driver path | N/A (D2 ESP32-S3 extension) | Pass: `logs/d2-spi/spi.log` |
+| T-18 | D2 | Runtime host, SCLK, MOSI, MISO, CS, clock and mode changes are validated; compatible devices share a bus and incompatible re-use is rejected | N/A (D2 ESP32-S3 extension) | Pass: `logs/d2-spi/spi.log`, `logs/d2-spi/fault-connected.log` |
+| T-19 | D2 | Known-pattern TX/RX integrity passes for 8, 16, 32, 64, 128, 256, 512 and 1024-byte payloads | N/A (D2 ESP32-S3 extension) | Pass: five configurations, 40,000 transfers; `logs/d2-spi/bench-20261017-*/` |
+| T-20 | D2 | A W25Q32 is identified and supports verified read/write plus retrievable event records through the generic SPI transport and a device layer | N/A (D2 ESP32-S3 extension) | Pending module; TFT is optional, not equivalent |
+| T-21 | D2 | Invalid host/mode/clock/pins, duplicate/conflicting pins, missing MISO for RX, oversized transfers, timeout and absent/disconnected W25Q32 are explicit errors and publish no valid-looking sample | N/A (D2 ESP32-S3 extension) | Config/clock/timeout pass; absent-device check open after disconnected loopback published unverified bytes (`logs/d2-spi/RESULTS.md`) |
+| T-22 | D2 | One hundred initialize/deinitialize or reconfiguration cycles have no progressive heap loss; failed reconfiguration leaves the previous device operational | N/A (D2 ESP32-S3 extension) | Pass: 100 cycles, heap 95,748 B before/after; `logs/d2-spi/spi.log` |
+| T-23 | D2 | SPI latency/throughput/error benchmark and concurrent SPI plus existing sensor/inference workload complete without resets or unexplained corruption | N/A (D2 ESP32-S3 extension) | Loopback benchmark pass only; concurrent flash + live sensor + inference pending |
 
 ## 2. Parity table (task 5)
 

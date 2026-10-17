@@ -409,7 +409,7 @@ Configs for each device are in the README sensor table. Verified so far on this 
 
 ### D2 SPI planning note
 
-D2 initially reserves SPI2/FSPI with SCLK GPIO12, MOSI GPIO11, MISO GPIO13, and CS GPIO10 for loopback or a readable SPI device. The connected TFT currently uses SCLK GPIO12, MOSI GPIO11, CS GPIO10, DC GPIO9, reset GPIO8, and backlight GPIO13, so GPIO13 cannot be both TFT backlight and MISO in the same wiring arrangement. Confirm the proof-device wiring and final controller before implementation. Keep GPIO19/20 for native USB, keep boot/strapping pins available, and do not use flash/PSRAM-connected pins. Follow [D2_SPI_TODO.md](D2_SPI_TODO.md) for validation, fault, benchmark, and evidence gates.
+D2's verified loopback fixture uses SPI2/FSPI with SCLK GPIO11, MOSI GPIO12, MISO GPIO13, and CS GPIO10; connect GPIO12 directly to GPIO13 only for loopback and leave the TFT disconnected. The proposed W25Q32 fixture uses the same four signals plus 3.3 V and GND, but its module markings and power requirements must be checked before wiring. The earlier TFT experiment used SCLK GPIO12, MOSI GPIO11, CS GPIO10, DC GPIO9, reset GPIO8, and backlight GPIO13; it is a different, optional fixture and cannot coexist with the loopback/MISO wiring. Keep GPIO19/20 for native USB, keep boot/strapping pins available, and do not use flash/PSRAM-connected pins. Follow [D2_SPI_TODO.md](D2_SPI_TODO.md) for validation, fault, benchmark, and evidence gates.
 
 ### Compile, upload and monitor the minimal sketch (Task 9)
 

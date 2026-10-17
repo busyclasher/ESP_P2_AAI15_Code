@@ -30,7 +30,7 @@ def command(ser, text, seconds, log):
 def config(name, **overrides):
     values = {
         "proto": "spi", "mode": "poll", "freq_hz": "2",
-        "spi.host": "fspi", "spi.sclk": "12", "spi.mosi": "11",
+        "spi.host": "fspi", "spi.sclk": "11", "spi.mosi": "12",
         "spi.miso": "13", "spi.cs": "10", "spi.hz": "10000000",
         "spi.mode": "0", "spi.tx": "0xA5 0x5A", "spi.read_len": "2",
         "spi.timeout_ms": "100",
@@ -72,7 +72,7 @@ def main():
 
         out = command(ser, "SHOW", 1.5, log)
         check("show", "proto=spi" in out and
-              "SPI host=fspi sclk=12 mosi=11 miso=13 cs=10 hz=10000000 mode=0 tx=2 rx=2 timeout_ms=100" in out, out)
+              "SPI host=fspi sclk=11 mosi=12 miso=13 cs=10 hz=10000000 mode=0 tx=2 rx=2 timeout_ms=100" in out, out)
 
         out = command(ser, "RUN", 4.0, log)
         check("loopback-2", bool(re.search(r"proto=spi src=SPI_LOOP len=2 ts=\d+ : A5 5A", out)), out)

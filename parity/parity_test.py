@@ -337,7 +337,7 @@ STAGES = {
     # T-06 and P-13: sensors that are not connected time out cleanly.
     "t06": [
         ("clear-t06", "CLEAR", "CLEAR", 2.5, [r"^CLEARED"]),
-        ("cfg-ow", "One-wire input with no sensor on GP18", "BEGINCFG|name=OW|proto=gpio|gpio.mode=onewire|gpio.pin=18"
+        ("cfg-ow", "One-wire input with no sensor on GP22", "BEGINCFG|name=OW|proto=gpio|gpio.mode=onewire|gpio.pin=22"
          "|mode=poll|freq_hz=2|ENDCFG", 2.5, [r"^CFG: ok \(added #\d+: OW\)"]),
         ("cfg-son", "HC-SR04 pulse input with no sensor (trig GP20, echo GP18)", "BEGINCFG|name=SON|proto=gpio|gpio.mode=pulse"
          "|gpio.trig=20|gpio.echo=18|gpio.pull=down|gpio.pulse_timeout_us=25000|mode=poll|freq_hz=2|ENDCFG",
