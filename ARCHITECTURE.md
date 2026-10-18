@@ -264,3 +264,26 @@ Any later change to a decision in this document needs a recorded engineering jus
 | Date | Attendees | Sections reviewed | Decisions and changes |
 |---|---|---|---|
 | | | | |
+
+## 16. D3 timing and D6 application contract (`d3`)
+
+This section supersedes the fixed-delay assumption for the application-facing path. The low-level HC-SR04 driver is still blocking and remains an explicit Sitt/Hasif dependency; the new contract does not misrepresent that driver as complete.
+
+```mermaid
+flowchart LR
+    SRC["Periodic sensor or trigger source"] --> SCH["Scheduler timing state"]
+    SCH -->|"sample completed"| RULE["Rule / classifier"]
+    SCH -->|"matching trigger_source"| TARGET["Event-driven target"]
+    RULE -->|"event: class"| ER["EventRecord v1, 80 B"]
+    ER --> AQ[["app_q, 8 records"]]
+    AQ --> APP["ApplicationTask"]
+    APP -->|"exactly-once transition"| OCC["Volatile occupancy"]
+    APP -->|"best effort, QoS 1"| PQ[["pub_q"]]
+    APP --> BQ[["bench_q"]]
+```
+
+Periodic mode executes immediately on `RUN` and advances from the prior deadline, skipping missed slots. One-shot executes once per arm. Event-driven work is armed by a matching completed source sample or the `TRIGGER` command and must remain inside its configured window. Configuration is validated before the sensor is installed; unsupported modes, ranges and event windows are refused.
+
+`ApplicationTask` is the sole occupancy writer. It validates the versioned, pointer-free EventRecord; rejects duplicate, stale and reordered records; chooses ML only when marked valid and above the confidence threshold, otherwise falls back to a valid rule result; and applies entry/exit/incomplete/false semantics without allowing a negative count. MQTT output failure is DEGRADED and never rolls back the committed occupancy transition. The current count and 32-entry de-duplication history are RAM-only, so persistence across reset remains an explicit open decision.
+
+The exact schema, validation rules, executed tests and remaining hardware-owner dependencies are recorded in [CODY_PRD_IMPLEMENTATION.md](CODY_PRD_IMPLEMENTATION.md).

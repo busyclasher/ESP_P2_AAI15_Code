@@ -48,6 +48,9 @@ add_executable(project_v3
     ${EDGECORE}/application/config_parser.c
     ${EDGECORE}/application/scheduler.c
     ${EDGECORE}/application/output_format.c
+    ${EDGECORE}/application/timing_contract.c
+    ${EDGECORE}/application/event_record.c
+    ${EDGECORE}/application/application_state.c
 
     ${EDGECORE}/mqtt/mqtt_config_parser.c
     ${EDGECORE}/mqtt/mqtt_json_parser.c

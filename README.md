@@ -1,6 +1,6 @@
 # D1 ESP32-S3 Port with D2 SPI Extension
 
-Branch `s3-port-d2`, based on the completed D1 `s3-port` branch. This is the Pico 2 W edge firmware (configpico2wedge / FlexiEdgePico `project_v3`) ported to the ESP32-S3 Super Mini with Arduino-ESP32. The same configuration lines, console commands, MQTT topics, output format and ML model work on both boards, because both builds compile the same shared code.
+Branch `d3`, based on `s3-port-d2`. This is the Pico 2 W edge firmware (configpico2wedge / FlexiEdgePico `project_v3`) ported to the ESP32-S3 Super Mini with Arduino-ESP32. The same configuration lines, console commands, MQTT topics, output format and ML model work on both boards, because both builds compile the same shared code. D3 adds explicit timing modes and D6 adds the typed application/occupancy contract; hardware acceptance remains evidence-gated.
 
 ## D2 SPI work
 
@@ -15,8 +15,11 @@ The shared driver, validated runtime schema, ESP32-S3 `SPIClass` backend, Pico c
 |---|---|
 | [1. Start here](#1-start-here) | What D1 is in one paragraph, the 7 commands to try, and every test result |
 | [Feedback tracker](WEEK6_FEEDBACK_RESPONSE.md) | Every professor feedback item on the Week 6 design review: owner, status, evidence, next action |
+| [Cody Week 8 ownership](CODY_WEEK8_SUBMODULE.md) | Cody's D3/D6 integration contracts, application semantics, coordination boundary, acceptance criteria and evidence interpretation |
+| [Cody PRD implementation](CODY_PRD_IMPLEMENTATION.md) | Executed D1/D3/D6 plan, frozen semantics, code map, tests and remaining owner dependencies |
 | [2. D1 task checklist](#2-d1-task-checklist) | Tasks 1–23 with status and dev notes; [execution model](#execution-model) |
 | [D2 tasks](D2_SPI_TODO.md) | The D2 SPI checklist (Brendan and Jun Yong), kept in its own file |
+| [D3 tasks](D3_TASKS.md) | Cody's configurable-timing checklist: modes, non-blocking ultrasonic capture, sequencing, WCET, tests and evidence |
 | [D2 SPI work](#d2-spi-work) | SPI implementation plan, ownership, acceptance criteria, and verification links |
 | [3. Set up and test D1 from scratch](#3-set-up-and-test-d1-from-scratch-mac-and-windows) | Step-by-step for a new laptop (Mac and Windows) |
 | &nbsp;&nbsp;[Part A: Install](#part-a-install) | Steps 1–4: tools, project, board support, machine check |

@@ -29,7 +29,7 @@ typedef struct {
     void *ctx;
     app_cfg_t cfg_copy;         // keep a private copy
     bool streaming;
-    uint64_t next_run;          // hal_time_us() deadline, 0 = not armed
+    timing_state_t timing;
     uint32_t overruns;          // samples skipped because the scheduler fell behind
     uint32_t last_overrun_log_ms;
     bool in_use;
@@ -76,11 +76,15 @@ void scheduler_dump(void) {
     for (int i = 0; i < MAX_ACTIVE; i++) {
         if (g_sensors[i].in_use) {
             const app_cfg_t *c = &g_sensors[i].cfg_copy;
-            printf("[SCHED] #%d name=%s proto=%s mode=%s freq=%.3fHz\n",
+            printf("[SCHED] #%d name=%s proto=%s mode=%s freq=%.3fHz timing=%s interval=%ums timeout=%ums window=%ums trigger=%s status=%u\n",
                    i, c->name,
                    proto_name(c->proto) ? proto_name(c->proto) : "unknown",
                    (c->mode==sample_mode_stream)?"stream":"poll",
-                   c->freq_hz);
+                   c->freq_hz, timing_mode_name(c->timing.mode),
+                   (unsigned)c->timing.interval_ms, (unsigned)c->timing.timeout_ms,
+                   (unsigned)c->timing.window_ms,
+                   c->timing_trigger_source[0] ? c->timing_trigger_source : "-",
+                   (unsigned)g_sensors[i].timing.status);
             if (c->proto == proto_spi) {
                 printf("[SCHED] #%d SPI host=%s sclk=%d mosi=%d miso=%d cs=%d hz=%u mode=%u tx=%u rx=%u timeout_ms=%u\n",
                        i, c->spi_host, c->spi_sclk, c->spi_mosi, c->spi_miso,
@@ -103,6 +107,7 @@ int scheduler_add_config(const app_cfg_t *cfg_in) {
             memset(S, 0, sizeof(*S));
             S->cfg_copy = *cfg_in;
             S->in_use = true;
+            timing_state_init(&S->timing, &S->cfg_copy.timing, hal_time_us(), false);
             /* Special case: remote MQTT source – no local bus. */
             if (cfg_in->proto == proto_mqtt) {
                 // Use remote_node / remote_source fields from cfg_in
@@ -126,7 +131,6 @@ int scheduler_add_config(const app_cfg_t *cfg_in) {
 
                 S->bus = NULL;
                 S->ctx = NULL;
-                S->next_run = hal_time_us();  // not really used for remote
                 printf("[SCHED] added MQTT-remote: local=%s <- %s/%s\n",
                        cfg_in->name, remote_node, remote_source);
                 return i;
@@ -139,8 +143,6 @@ int scheduler_add_config(const app_cfg_t *cfg_in) {
                 return -1;
             }
             S->bus = bus_lookup(pname);
-            S->next_run = hal_time_us();
-
             if (!S->bus) {
                 SLOG("add[%d]: UNKNOWN proto for %s", i, cfg_in->name);
                 S->in_use = false;
@@ -217,6 +219,24 @@ void scheduler_apply_config(const app_cfg_t *cfg) {
     (void)scheduler_add_config(cfg);
 }
 
+int scheduler_trigger(const char *source, uint64_t timestamp_us) {
+    if (!source || !*source) return 0;
+    int armed = 0;
+    for (int i = 0; i < MAX_ACTIVE; i++) {
+        active_sensor_t *S = &g_sensors[i];
+        if (!S->in_use || S->cfg_copy.timing.mode == TIMING_MODE_PERIODIC) continue;
+        bool matches_name = strcmp(source, S->cfg_copy.name) == 0;
+        bool matches_source = S->cfg_copy.timing_trigger_source[0] &&
+                              strcmp(source, S->cfg_copy.timing_trigger_source) == 0;
+        if ((matches_name || matches_source) && timing_state_trigger(&S->timing, timestamp_us)) {
+            armed++;
+            SLOG("trigger[%d/%s]: source=%s deadline=%llu", i, S->cfg_copy.name, source,
+                 (unsigned long long)S->timing.deadline_us);
+        }
+    }
+    return armed;
+}
+
 /* Tick all sensors */
 void scheduler_run_all(bool running) {
     uint8_t buf[128];
@@ -235,23 +255,14 @@ void scheduler_run_all(bool running) {
     if (running && !s_prev_running) {
         uint64_t now_edge = hal_time_us();
         for (int j = 0; j < MAX_ACTIVE; j++) if (g_sensors[j].in_use) {
-            g_sensors[j].next_run = now_edge;       // arm all to “now”
-            SLOG("arm[%d/%s]: next_run reset to NOW", j, g_sensors[j].cfg_copy.name);
+            bool arm_now = g_sensors[j].cfg_copy.timing.mode != TIMING_MODE_EVENT_DRIVEN;
+            timing_state_init(&g_sensors[j].timing, &g_sensors[j].cfg_copy.timing,
+                              now_edge, arm_now);
+            SLOG("arm[%d/%s]: mode=%s armed=%u", j, g_sensors[j].cfg_copy.name,
+                 timing_mode_name(g_sensors[j].cfg_copy.timing.mode), arm_now ? 1u : 0u);
         }
     }
     s_prev_running = running;
-
-    // extra safety: if running but a sensor next_run looks bogus, arm it
-    if (running) {
-        uint64_t now_chk = hal_time_us();
-        for (int j = 0; j < MAX_ACTIVE; j++) if (g_sensors[j].in_use) {
-            int64_t dt_chk = (int64_t)(g_sensors[j].next_run - now_chk); // to - from
-            if (g_sensors[j].next_run == 0 || dt_chk < -(10LL*1000*1000)) { // >10s late or NIL
-                g_sensors[j].next_run = now_chk;
-                SLOG("arm[%d/%s]: corrected next_run -> NOW", j, g_sensors[j].cfg_copy.name);
-            }
-        }
-    }
 
     uint64_t now = hal_time_us();
 
@@ -284,38 +295,32 @@ void scheduler_run_all(bool running) {
         bool did_poll = false;
 
 if (cfg->mode == sample_mode_poll) {
-    int64_t dt_us = (int64_t)(S->next_run - now); // to - from
-    if (dt_us <= 0) {
+    timing_status_t timing_status = timing_state_poll(&S->timing, now);
+    if (timing_status == TIMING_STATUS_TIMEOUT) {
+        printf("[TIMING] sensor=%s status=timeout armed_us=%llu deadline_us=%llu\n",
+               cfg->name, (unsigned long long)S->timing.armed_us,
+               (unsigned long long)S->timing.deadline_us);
+        S->timing.status = TIMING_STATUS_COMPLETE;
+    } else if (timing_status == TIMING_STATUS_DUE) {
+        int64_t dt_us = (int64_t)(S->timing.due_us - now); // due - now
         // More than one period late means at least one sample was skipped:
         // report it (rate-limited) instead of slowing down silently (T-04).
         uint32_t late_ms = (uint32_t)(-dt_us / 1000);
-        float fp = cfg->freq_hz > 0.0f ? 1000.0f / cfg->freq_hz : 1000.0f;
-        if (S->next_run != 0 && late_ms > (uint32_t)(fp * 1.1f)) {
+        uint32_t period_ms = cfg->timing.interval_ms;
+        if (cfg->timing.mode == TIMING_MODE_PERIODIC && S->timing.due_us != 0 &&
+            late_ms > (uint32_t)((float)period_ms * 1.1f)) {
             S->overruns++;
             uint32_t now_ms = hal_time_ms();
             if (now_ms - S->last_overrun_log_ms >= 5000u) {
                 printf("[SCHED] overload: %s ran %u ms late (period %u ms, %u skipped so far)\n",
-                       cfg->name, (unsigned)late_ms, (unsigned)(fp + 0.5f), (unsigned)S->overruns);
+                       cfg->name, (unsigned)late_ms, (unsigned)period_ms, (unsigned)S->overruns);
                 S->last_overrun_log_ms = now_ms;
             }
         }
         did_poll = true;
         n = S->bus->poll_once ? S->bus->poll_once(S->ctx, buf, sizeof(buf)) : -1;
-
-        // ---- float-aware period_ms ----
-        float f = cfg->freq_hz;
-        uint32_t period_ms;
-        if (f > 0.0f) {
-            float p_ms_f = 1000.0f / f;     // e.g. 0.5 Hz -> 2000ms
-            if (p_ms_f < 1.0f)      p_ms_f = 1.0f;        // cap minimum
-            if (p_ms_f > 600000.0f) p_ms_f = 600000.0f;   // cap ~10 minutes
-            period_ms = (uint32_t)(p_ms_f + 0.5f);        // round
-        } else {
-            period_ms = 1000u;  // default 1s if freq=0
-        }
-
         now = hal_time_us();
-        S->next_run = now + (uint64_t)period_ms * 1000u;
+        timing_state_complete(&S->timing, now);
     }
 }
 
@@ -361,9 +366,8 @@ uint32_t scheduler_next_due_ms(bool running, uint32_t max_ms) {
             if (wait > 10) wait = 10;
             continue;
         }
-        if (S->next_run <= now) return 0;
-        uint64_t ms = (S->next_run - now + 999) / 1000;
-        if (ms < wait) wait = (uint32_t)ms;
+        uint32_t candidate = timing_state_wait_ms(&S->timing, now, wait);
+        if (candidate < wait) wait = candidate;
     }
     return wait;
 }

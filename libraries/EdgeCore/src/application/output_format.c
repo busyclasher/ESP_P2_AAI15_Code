@@ -3,6 +3,7 @@
 #include "bus/bus_common.h"               // publisher_emit_hex() extern lives here
 #include "mqtt/mqtt_telemetry.h"
 #include "rule_engine/rules.h"
+#include "application/scheduler.h"
 
 void output_emit_hex(const app_cfg_t *cfg,
                      const char *proto_str,
@@ -22,6 +23,10 @@ void output_emit_hex(const app_cfg_t *cfg,
 
     // 2) Rule engine evaluation for this frame
     rules_on_sample(src_str /* usually cfg->name */, buf, n, ts);
+
+    // A completed source sample is also a logical timing event. This arms any
+    // event-driven sensor configured with timing.trigger_source=<src_str>.
+    (void)scheduler_trigger(src_str, hal_time_us());
 
     // 3) MQTT: raw bytes (binary payload)
     (void)mqtt_pub_bytes(src_str, buf, (size_t)n, /*qos*/1, /*retain*/false);

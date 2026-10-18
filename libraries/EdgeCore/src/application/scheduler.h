@@ -42,6 +42,10 @@ void scheduler_run_all(bool running);
 /* Milliseconds until the next sensor falls due, capped at max_ms. */
 uint32_t scheduler_next_due_ms(bool running, uint32_t max_ms);
 
+/* Arm matching one-shot/event-driven sensors. Matches either the sensor name
+ * or timing.trigger_source. Returns the number newly armed. */
+int scheduler_trigger(const char *source, uint64_t timestamp_us);
+
 // ---------------------------------------------------------------------
 // Compatibility shim for legacy single-sensor mode
 // (only define this if app.h already declares scheduler_run_step)
