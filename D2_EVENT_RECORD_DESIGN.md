@@ -8,6 +8,10 @@ Record a compact occupancy event in external SPI flash after the application has
 
 “Publish first” means **attempt to enqueue** the occupancy result to the existing publisher before offering the log request. It does not assert MQTT broker delivery. A publisher-queue failure and a flash-log failure are independent, observable outcomes; neither may turn a failed reading into a valid one or stop live monitoring.
 
+## Relationship to the tribunal EventRecord
+
+The feature-bearing sensor-node `EventRecord` in `15_PreTri1_final.pdf` is a different interface from this compact flash summary. This 32-byte proposal contains a boot ID and sequence, but no source node ID; it cannot by itself preserve the full `(node, boot, sequence)` identity across multiple producers. Before implementation, extend/version the log or define a durable source-ID mapping. Also freeze whether a count checkpoint and its dedup state are committed together, how torn writes recover, and what happens after log loss or sequence rollover. This proposal does not yet implement persistent occupancy or exactly-once application. Review: Cody + Brendan with the D2 owners.
+
 ## Proposed logical record v1 (32 bytes)
 
 Serialize fields explicitly in little-endian byte order; do not write a compiler-dependent C/C++ struct image. CRC-32 covers bytes 0–27. Values and enumeration meanings must be frozen in a header and tested with golden byte vectors before deployment.

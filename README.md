@@ -16,6 +16,8 @@ The shared driver, validated runtime schema, ESP32-S3 `SPIClass` backend, Pico c
 | [1. Start here](#1-start-here) | What D1 is in one paragraph, the 7 commands to try, and every test result |
 | [Feedback tracker](WEEK6_FEEDBACK_RESPONSE.md) | Every professor feedback item on the Week 6 design review: owner, status, evidence, next action |
 | [2. D1 task checklist](#2-d1-task-checklist) | Tasks 1–23 with status and dev notes; [execution model](#execution-model) |
+| [Pre-tribunal review](PRETRI1_REVIEW.md) | Corrections and remaining integration gaps from the submitted Group 15 PDF |
+| [D3 tasks](D3_TASKS.md) | Timing, sensor-event assembly and integration acceptance actions |
 | [D2 tasks](D2_SPI_TODO.md) | The D2 SPI checklist (Brendan and Jun Yong), kept in its own file |
 | [D2 SPI work](#d2-spi-work) | SPI implementation plan, ownership, acceptance criteria, and verification links |
 | [3. Set up and test D1 from scratch](#3-set-up-and-test-d1-from-scratch-mac-and-windows) | Step-by-step for a new laptop (Mac and Windows) |
